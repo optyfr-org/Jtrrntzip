@@ -1,115 +1,152 @@
 plugins {
-	id 'java' 
-	id "maven-publish"
-	id "org.sonarqube"
-	id "org.beryx.jlink" version "2.21.2"
-	id "org.javamodularity.moduleplugin" version "1.7.0"
+    id 'java'
+    id 'eclipse'
+    id "maven-publish"
+    id "org.sonarqube"
+    id "org.beryx.jlink" version "latest.release"
+    // Note: moduleplugin removed as it is incompatible with Gradle's configuration cache (causes "project is null" in JavaCompile)
+    id 'org.graalvm.buildtools.native' version 'latest.release'
 }
 
 sonarqube {
-  properties {
-    property "sonar.projectKey", "optyfr_Jtrrntzip"
-    property "sonar.organization", "optyfr"
-    property "sonar.host.url", "https://sonarcloud.io"
-	property "sonar.sourceEncoding", "utf-8"
-	property "sonar.log.level", "INFO"
-	property "sonar.verbose", "true"
-  }
+    properties {
+        property "sonar.projectKey", "optyfr_Jtrrntzip"
+        property "sonar.organization", "optyfr"
+        property "sonar.host.url", "https://sonarcloud.io"
+        property "sonar.sourceEncoding", "utf-8"
+        property "sonar.log.level", "INFO"
+        property "sonar.verbose", "true"
+    }
 }
 
-apply plugin: 'java'
-sourceCompatibility = 17
-targetCompatibility = 17
-apply plugin: 'eclipse'
-apply plugin: 'org.javamodularity.moduleplugin'
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
 
 def props = new Properties()
 file("dist/ver.properties").withInputStream { props.load(it) }
 
 version = props.getProperty("Specification-Version") + '.' + props.getProperty("Implementation-Version")
+def theVersion = version
+
+def manifestAttributes = [
+    "Manifest-Version"     : "1.0",
+    "Specification-Title"  : "Jtrrntzip",
+    "Specification-Version": props.getProperty("Specification-Version"),
+    "Implementation-Title" : "JTrrntzip",
+    "Implementation-Version" : props.getProperty("Implementation-Version"),
+    "Main-Class"           : "jtrrntzip.Program",
+]
 
 repositories {
-	mavenCentral()
+    mavenCentral()
 }
 
-java {
-	modularity.inferModulePath.set(true)
+application {
+    mainClass = 'jtrrntzip.Program'
 }
 
-eclipse {
-	classpath {
-		downloadJavadoc = true
-		downloadSources = true
-		file {
-			whenMerged {
-				//Define a module as being either a library or a project dependency.
-				//Test sources are excluded because eclipse wants them on the classpath for some reason (1)
-				entries.findAll {  (it instanceof org.gradle.plugins.ide.eclipse.model.Library || it instanceof org.gradle.plugins.ide.eclipse.model.ProjectDependency) && !it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
-					it.entryAttributes['module'] = 'true'
-				}
-				
-				//Test-scoped stuff should set the appropriate flag
-				entries.findAll { (it.properties.kind.equals('src') || it.properties.kind.equals('lib')) && it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
-					it.entryAttributes['test'] = 'true'
-				}
-				
-				entries.findAll { isConGradle(it) }.each {
-				  it.entryAttributes['module'] = 'true'
-				}
-			}
-		}
-	}
-}
+import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 
-boolean isConGradle(entry) {
-	entry.kind == 'con' && entry.path == 'org.eclipse.buildship.core.gradleclasspathcontainer'
-}
+def os = DefaultNativePlatform.currentOperatingSystem
+def arch = DefaultNativePlatform.currentArchitecture
 
-
-dependencies {
-	implementation group: 'commons-codec', name: 'commons-codec', version: '1.+'
-	implementation group: 'commons-io', name: 'commons-io', version: '2.+'
-	implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.+'
-}
-
-
-sourceSets {
-    main {
-        java {
-            srcDirs = ["src"]
+graalvmNative {
+    toolchainDetection = false
+    binaries {
+        main {
+            mainClass = 'jtrrntzip.Program'
+            imageName = 'jtrrntzip'
+            buildArgs.add('-march=x86-64-v2')
+            buildArgs.add('-O3')
+            buildArgs.add('--future-defaults=all')
+            if(os.isLinux()) {
+                buildArgs.add('--gc=G1')
+            }
+            buildArgs.add('-H:+AddAllCharsets')
+            buildArgs.add('-H:+ReportExceptionStackTraces')
         }
-        resources {
-            srcDirs = ["src"]
+        all {
+            resources.autodetect()
+        }
+    }
+    metadataRepository {
+        enabled = true
+    }
+    agent {
+        defaultMode = "standard"
+        enabled = true
+
+        trackReflectionMetadata = true
+
+        metadataCopy {
+            inputTaskNames.add("run")
+            outputDirectories.add("src/main/resources/META-INF/native-image/")
+            mergeWithExisting = false
         }
     }
 }
 
+base {
+    archivesName = 'Jtrrntzip'
+}
+
+eclipse {
+    classpath {
+        downloadJavadoc = true
+        downloadSources = true
+        file {
+            whenMerged {
+                //Define a module as being either a library or a project dependency.
+                //Test sources are excluded because eclipse wants them on the classpath for some reason (1)
+                entries.findAll { (it instanceof org.gradle.plugins.ide.eclipse.model.Library || it instanceof org.gradle.plugins.ide.eclipse.model.ProjectDependency) && !it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
+                    it.entryAttributes['module'] = 'true'
+                }
+
+                //Test-scoped stuff should set the appropriate flag
+                entries.findAll { (it.properties.kind.equals('src') || it.properties.kind.equals('lib')) && it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
+                    it.entryAttributes['test'] = 'true'
+                }
+
+                entries.findAll { isConGradle(it) }.each {
+                    it.entryAttributes['module'] = 'true'
+                }
+            }
+        }
+    }
+}
+
+boolean isConGradle(entry) {
+    entry.kind == 'con' && entry.path == 'org.eclipse.buildship.core.gradleclasspathcontainer'
+}
+
+dependencies {
+    implementation 'commons-codec:commons-codec:1.+'
+    implementation 'commons-io:commons-io:2.+'
+    implementation 'org.apache.commons:commons-lang3:3.+'
+}
+
 jar {
-	manifest {
-		attributes(
-			"Manifest-Version"     : "1.0",
-		    "Specification-Title"  : "Jtrrntzip",
-		    "Specification-Version": props.getProperty("Specification-Version"),
-        	"Implementation-Title" : "JTrrntzip",
-            "Implementation-Version" : props.getProperty("Implementation-Version"),
-            "Main-Class"           : "jtrrntzip.Program",
+    manifest {
+        attributes(manifestAttributes)
 //            "Class-Path"           : configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-		)
-		archiveFileName = project.archivesBaseName + '.jar'
-	}
+    }
+    archiveFileName = base.archivesName.get() + '.jar'
 }
 
 group = "com.github.optyfr"
 
-task sourcesJar(type: Jar) {
-    duplicatesStrategy = 'include'
-    classifier = 'sources'
-    from sourceSets.main.allSource
-}
-
 java {
     withJavadocJar()
     withSourcesJar()
+}
+
+tasks.named('sourcesJar', Jar) {
+    duplicatesStrategy = 'include'
 }
 
 publishing {
@@ -118,8 +155,8 @@ publishing {
             name = "jtrrntzip"
             url = uri("https://maven.pkg.github.com/optyfr/Jtrrntzip")
             credentials {
-                username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
-                password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+                username = providers.gradleProperty("gpr.user").orElse(providers.environmentVariable("USERNAME")).getOrNull()
+                password = providers.gradleProperty("gpr.key").orElse(providers.environmentVariable("TOKEN")).getOrNull()
             }
         }
     }
@@ -162,18 +199,22 @@ publishing {
     }
 }
 
-task distZip2(type: Zip, dependsOn: jar) {
-	from (configurations.runtimeClasspath) {
-		into('lib')
-	}
-	from (jar)
-	from ('dist') {
-		include '*.bat'
-		include '*.sh'
-		fileMode = 0755
-	}
-	archiveFileName = project.archivesBaseName + '-' + project.version + '.zip'
-	destinationDirectory = file("$buildDir/distributions/")
+task distZip2(type: Zip) {
+    dependsOn tasks.jar
+    from(configurations.runtimeClasspath) {
+        into('lib')
+    }
+    from(tasks.jar)
+    from('dist') {
+        include '*.bat'
+        include '*.sh'
+        filePermissions {
+            unix(0755)
+        }
+    }
+    archiveFileName = base.archivesName.get() + '-' + theVersion + '.zip'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
 }
 
-assemble.dependsOn distZip2
+assemble.dependsOn 'distZip2'
+
