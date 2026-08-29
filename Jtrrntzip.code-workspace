@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"java.configuration.updateBuildConfiguration": "automatic",
+		"java.format.settings.url": "C:\\Users\\opty\\.vscode\\opty.xml",
+		"[java]": {
+			"editor.detectIndentation": false
+		}
+	}
+}
