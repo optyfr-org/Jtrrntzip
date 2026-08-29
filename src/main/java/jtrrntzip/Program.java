@@ -16,9 +16,9 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 	{
 		if(args.length == 0)
 		{
-			System.out.println(""); //$NON-NLS-1$
-			System.out.println(Messages.getString("Program.MissingPath")); //$NON-NLS-1$
-			System.out.println(Messages.getString("Program.Usage")); //$NON-NLS-1$
+			System.out.println(""); //NOSONAR
+			System.out.println(Messages.getString("Program.MissingPath")); //NOSONAR
+			System.out.println(Messages.getString("Program.Usage")); //NOSONAR
 			return;
 		}
 
@@ -54,7 +54,7 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 				// now check if arg is a directory/filename with possible wild cards.
 				String dir = argfile.getParent();
 				if(dir == null)
-					dir = Paths.get(".").toAbsolutePath().normalize().toString(); //$NON-NLS-1$
+					dir = Paths.get(".").toAbsolutePath().normalize().toString(); 
 
 				final String filename = argfile.getName();
 
@@ -62,7 +62,7 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 				{
 					dirStream.forEach(path -> {
 						final String ext = FilenameUtils.getExtension(path.getFileName().toString());
-						if(ext != null && (ext.equalsIgnoreCase("zip"))) //$NON-NLS-1$
+						if(ext != null && (ext.equalsIgnoreCase("zip"))) 
 						{
 							try
 							{
@@ -83,7 +83,7 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 		}
 		if(guiLaunch)
 		{
-			System.out.format(Messages.getString("Program.Complete")); //$NON-NLS-1$
+			System.out.format(Messages.getString("Program.Complete"));  //NOSONAR
 			try(final var scanner = new Scanner(System.in))
 			{
 				scanner.nextLine();
@@ -94,10 +94,12 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 	private void processDir(final File dir) throws IOException
 	{
 		if(isVerboseLogging())
-			System.out.println(Messages.getString("Program.CheckingDir") + dir); //$NON-NLS-1$
+			System.out.println(Messages.getString("Program.CheckingDir") + dir); //NOSONAR
 
 		File[] files = dir.listFiles();
-		if(files!=null) for(final File f : files)
+		if(files==null)
+            return;
+        for(final File f : files)
 		{
 			if(f.isDirectory())
 			{
@@ -107,7 +109,7 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 			else
 			{
 				final String ext = FilenameUtils.getExtension(f.getName());
-				if(ext != null && (ext.equalsIgnoreCase("zip"))) //$NON-NLS-1$
+				if(ext != null && (ext.equalsIgnoreCase("zip"))) 
 				{
 					tz.process(f);
 				}
@@ -123,13 +125,13 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 	@Override
 	public final void statusLogCallBack(final String log)
 	{
-		System.out.format("%s%n", log); //$NON-NLS-1$
+		System.out.format("%s%n", log); //NOSONAR
 	}
 
 	@Override
 	public final void statusCallBack(final int percent)
 	{
-		System.out.format("%03d%% ", percent); //$NON-NLS-1$
+		System.out.format("%03d%% ", percent); //NOSONAR
 	}
 
 	@Override

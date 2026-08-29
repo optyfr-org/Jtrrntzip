@@ -119,9 +119,9 @@ public final class ZipFile implements ICompress
 			{
 				esbc.close();
 			}
-			catch (IOException e)
+			catch (IOException _)
 			{
-				System.err.println(e.getMessage());
+                /* ignore */
 			}
 		}
 	}
@@ -471,7 +471,7 @@ public final class ZipFile implements ICompress
 			}
 			esbc = new EnhancedSeekableByteChannel(Files.newByteChannel(newFilename.toPath(), StandardOpenOption.READ), ByteOrder.LITTLE_ENDIAN);
 		}
-		catch (IOException e)
+		catch (IOException _)
 		{
 			zipFileClose();
 			return ZipReturn.ZIPERROROPENINGFILE;
@@ -485,131 +485,143 @@ public final class ZipFile implements ICompress
 		{
 			ZipReturn zRet = findEndOfCentralDirSignature();
 			if (zRet != ZipReturn.ZIPGOOD)
-			{
-				zipFileClose();
-				return zRet;
-			}
+				return fail(zRet);
 
 			long endOfCentralDir = esbc.position();
 			zRet = endOfCentralDirRead();
 			if (zRet != ZipReturn.ZIPGOOD)
-			{
-				zipFileClose();
-				return zRet;
-			}
+				return fail(zRet);
 
-			// check if this is a ZIP64 zip and if it is read the Zip64 End Of
-			// Central Dir Info
-			if (centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || centerDirSize.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || localFilesCount.compareTo(BigInteger.valueOf(0xffff)) == 0)
-			{
-				zip64 = true;
-				esbc.position(endOfCentralDir - 20);
-				zRet = zip64EndOfCentralDirectoryLocatorRead();
-				if (zRet != ZipReturn.ZIPGOOD)
-				{
-					zipFileClose();
-					return zRet;
-				}
-				esbc.position(endOfCenterDir64.longValue());
-				zRet = zip64EndOfCentralDirRead();
-				if (zRet != ZipReturn.ZIPGOOD)
-				{
-					zipFileClose();
-					return zRet;
-				}
-			}
+			zRet = readZip64StructuresIfNeeded(endOfCentralDir);
+			if (zRet != ZipReturn.ZIPGOOD)
+				return fail(zRet);
 
-			var trrntzip = false;
+			boolean trrntzip = isTorrentZipped();
 
-			// check if the ZIP has a valid TorrentZip file comment
-			if (fileComment.length == 22 && new String(fileComment, StandardCharsets.US_ASCII).substring(0, 14).equals("TORRENTZIPPED-")) //$NON-NLS-1$ //$NON-NLS-2$
-			{
-				final var buffer = new byte[centerDirSize.intValue()];
-				esbc.position(centerDirStart.longValue());
-				esbc.startChecksum();
-				esbc.get(buffer);
-				long r = esbc.endChecksum();
+			zRet = readCentralDirectoryEntries();
+			if (zRet != ZipReturn.ZIPGOOD)
+				return fail(zRet);
 
-				final var tcrc = new String(fileComment, StandardCharsets.US_ASCII).substring(14, 22); //$NON-NLS-1$
-				final var zcrc = String.format("%08X", r); //$NON-NLS-1$
-				if (tcrc.equalsIgnoreCase(zcrc))
-					trrntzip = true;
-			}
+			boolean[] trrntHolder = {trrntzip};
+			zRet = readLocalFileHeaders(trrntHolder);
+			trrntzip = trrntHolder[0];
+			if (zRet != ZipReturn.ZIPGOOD)
+				return fail(zRet);
 
-			// now read the central directory
-			esbc.position(centerDirStart.longValue());
-
-			localFiles.clear();
-			for (var i = 0; i < localFilesCount.longValue(); i++)
-			{
-				final var lc = new LocalFile(esbc);
-				zRet = lc.centralDirectoryRead();
-				if (zRet != ZipReturn.ZIPGOOD)
-				{
-					zipFileClose();
-					lc.close();
-					return zRet;
-				}
-				zip64 |= lc.isZip64();
-				localFiles.add(lc);
-			}
-
-			for (var i = 0; i < localFilesCount.intValue(); i++)
-			{
-				zRet = localFiles.get(i).localFileHeaderRead();
-				if (zRet != ZipReturn.ZIPGOOD)
-				{
-					zipFileClose();
-					return zRet;
-				}
-				trrntzip &= localFiles.get(i).isTrrntZip();
-			}
-
-			// check trrntzip file order
 			if (trrntzip)
-				for (var i = 0; i < localFilesCount.intValue() - 1; i++)
-				{
-					if (localFiles.get(i).getFileName().compareToIgnoreCase(localFiles.get(i + 1).getFileName()) >= 0)
-					{
-						trrntzip = false;
-						break;
-					}
-				}
+				trrntzip = isTorrentZipFileOrderValid();
 
-			// check trrntzip directories
 			if (trrntzip)
-				for (var i = 0; i < localFilesCount.intValue() - 1; i++)
-				{
-					// see if we found a directory
-					String filename0 = localFiles.get(i).getFileName();
-					if (filename0.charAt(filename0.length() - 1) != '/')
-						continue;
-
-					// see if the next file is in that directory
-					String filename1 = localFiles.get(i + 1).getFileName();
-					if (filename1.length() <= filename0.length())
-						continue;
-					if (filename0.compareToIgnoreCase(filename1.substring(0, filename0.length())) != 0)
-						continue;
-
-					// if we found a file in the directory then we do not need
-					// the directory entry
-					trrntzip = false;
-					break;
-				}
+				trrntzip = hasNoUnnecessaryDirectoryEntries();
 
 			if (trrntzip)
 				pZipStatus.add(ZipStatus.TRRNTZIP);
 
 			return ZipReturn.ZIPGOOD;
 		}
-		catch (Exception e)
+		catch (Exception _)
 		{
-			System.err.println(e.getMessage());
 			zipFileClose();
 			return ZipReturn.ZIPERRORREADINGFILE;
 		}
 
+	}
+
+	private final boolean isTorrentZipFileOrderValid()
+	{
+		for (var i = 0; i < localFilesCount.intValue() - 1; i++)
+		{
+			if (localFiles.get(i).getFileName().compareToIgnoreCase(localFiles.get(i + 1).getFileName()) >= 0)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private final boolean hasNoUnnecessaryDirectoryEntries()
+	{
+		for (var i = 0; i < localFilesCount.intValue() - 1; i++)
+		{
+			String filename0 = localFiles.get(i).getFileName();
+			String filename1 = localFiles.get(i + 1).getFileName();
+			if (filename0.charAt(filename0.length() - 1) == '/' && filename1.length() > filename0.length() && filename0.compareToIgnoreCase(filename1.substring(0, filename0.length())) == 0)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private final ZipReturn readZip64StructuresIfNeeded(long endOfCentralDir) throws IOException
+	{
+		if (centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || centerDirSize.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || localFilesCount.compareTo(BigInteger.valueOf(0xffff)) == 0)
+		{
+			zip64 = true;
+			esbc.position(endOfCentralDir - 20);
+			ZipReturn zRet = zip64EndOfCentralDirectoryLocatorRead();
+			if (zRet != ZipReturn.ZIPGOOD)
+				return zRet;
+			esbc.position(endOfCenterDir64.longValue());
+			zRet = zip64EndOfCentralDirRead();
+			if (zRet != ZipReturn.ZIPGOOD)
+				return zRet;
+		}
+		return ZipReturn.ZIPGOOD;
+	}
+
+	private final boolean isTorrentZipped() throws IOException
+	{
+		if (fileComment.length == 22 && new String(fileComment, StandardCharsets.US_ASCII).substring(0, 14).equals("TORRENTZIPPED-")) //$NON-NLS-1$ //$NON-NLS-2$
+		{
+			final var buffer = new byte[centerDirSize.intValue()];
+			esbc.position(centerDirStart.longValue());
+			esbc.startChecksum();
+			esbc.get(buffer);
+			long r = esbc.endChecksum();
+			final var tcrc = new String(fileComment, StandardCharsets.US_ASCII).substring(14, 22); //$NON-NLS-1$
+			final var zcrc = String.format("%08X", r); //$NON-NLS-1$
+			if (tcrc.equalsIgnoreCase(zcrc))
+				return true;
+		}
+		return false;
+	}
+
+	private final ZipReturn readCentralDirectoryEntries() throws IOException
+	{
+		esbc.position(centerDirStart.longValue());
+		localFiles.clear();
+		for (var i = 0; i < localFilesCount.longValue(); i++)
+		{
+			final var lc = new LocalFile(esbc);
+			ZipReturn zRet = lc.centralDirectoryRead();
+			if (zRet != ZipReturn.ZIPGOOD)
+			{
+				lc.close();
+				return zRet;
+			}
+			zip64 |= lc.isZip64();
+			localFiles.add(lc);
+		}
+		return ZipReturn.ZIPGOOD;
+	}
+
+	private final ZipReturn readLocalFileHeaders(boolean[] trrntzipHolder) throws IOException
+	{
+		for (var i = 0; i < localFilesCount.intValue(); i++)
+		{
+			ZipReturn zRet = localFiles.get(i).localFileHeaderRead();
+			if (zRet != ZipReturn.ZIPGOOD)
+				return zRet;
+			trrntzipHolder[0] &= localFiles.get(i).isTrrntZip();
+		}
+		return ZipReturn.ZIPGOOD;
+	}
+
+	private final ZipReturn fail(ZipReturn r) throws IOException
+	{
+		zipFileClose();
+		return r;
 	}
 
 	public final ZipReturn zipFileOpenReadStream(int index, boolean raw, AtomicReference<InputStream> stream, AtomicReference<BigInteger> streamSize, AtomicInteger compressionMethod) throws IOException

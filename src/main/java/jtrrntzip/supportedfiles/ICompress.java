@@ -12,8 +12,7 @@ import jtrrntzip.ZipOpenType;
 import jtrrntzip.ZipReturn;
 import jtrrntzip.ZipStatus;
 
-public interface ICompress extends Closeable, AutoCloseable
-{
+public interface ICompress extends Closeable {
 	int localFilesCount();
 
 	String filename(int i);
@@ -32,7 +31,8 @@ public interface ICompress extends Closeable, AutoCloseable
 
 	void zipFileClose() throws IOException;
 
-	ZipReturn zipFileOpenWriteStream(boolean raw, boolean trrntzip, String filename, BigInteger uncompressedSize, short compressionMethod, AtomicReference<OutputStream> stream) throws IOException;
+	ZipReturn zipFileOpenWriteStream(boolean raw, boolean trrntzip, String filename, BigInteger uncompressedSize, short compressionMethod, AtomicReference<OutputStream> stream)
+			throws IOException;
 
 	ZipReturn zipFileCloseReadStream() throws IOException;
 

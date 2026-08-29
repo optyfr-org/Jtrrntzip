@@ -21,36 +21,36 @@ public class AbstractTorrentZipOptions implements TorrentZipOptions
 		{
 			switch(arg)
 			{
-				case "-?": //$NON-NLS-1$
-					System.out.format("Jtrrntzip v%s%n", Program.class.getPackage().getSpecificationVersion()); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.Copyright")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.BasedOnTrrntzipDN")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.Usage")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.Options")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.ShowThisHelp")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.PreventSubDirRecursion")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.ForceReZip")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.CheckOnly")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.VerboseLogging")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.ShowVersion")); //$NON-NLS-1$
-					System.out.println(Messages.getString("AbstractTorrentZipOptions.PauseWhenFinished")); //$NON-NLS-1$
+				case "-?": 
+					System.out.format("Jtrrntzip v%s%n", Program.class.getPackage().getSpecificationVersion()); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.Copyright")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.BasedOnTrrntzipDN")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.Usage")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.Options")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.ShowThisHelp")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.PreventSubDirRecursion")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.ForceReZip")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.CheckOnly")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.VerboseLogging")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.ShowVersion")); //NOSONAR
+					System.out.println(Messages.getString("AbstractTorrentZipOptions.PauseWhenFinished")); //NOSONAR
 					return;
-				case "-s": //$NON-NLS-1$
+				case "-s": 
 					noRecursion = true;
 					break;
-				case "-f": //$NON-NLS-1$
+				case "-f": 
 					forceReZip = true;
 					break;
-				case "-c": //$NON-NLS-1$
+				case "-c": 
 					checkOnly = true;
 					break;
-				case "-l": //$NON-NLS-1$
+				case "-l": 
 					verboseLogging = true;
 					break;
-				case "-v": //$NON-NLS-1$
-					System.out.format("TorrentZip v%s", Program.class.getPackage().getSpecificationVersion()); //$NON-NLS-1$
+				case "-v": 
+					System.out.format("TorrentZip v%s", Program.class.getPackage().getSpecificationVersion()); //NOSONAR
 					return;
-				case "-g": //$NON-NLS-1$
+				case "-g": 
 					guiLaunch = true;
 					break;
 				default:

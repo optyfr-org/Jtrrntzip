@@ -1,8 +1,6 @@
 package jtrrntzip;
 
-import java.io.Serializable;
-
-public enum TrrntZipStatus implements Serializable
+public enum TrrntZipStatus
 {
 	VALIDTRRNTZIP,
 	CORRUPTZIP,

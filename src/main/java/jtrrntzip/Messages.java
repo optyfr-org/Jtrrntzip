@@ -11,6 +11,7 @@ public class Messages
 
 	private Messages()
 	{
+        /* Prevent instantiation */
 	}
 
 	public static String getString(String key)
@@ -19,7 +20,7 @@ public class Messages
 		{
 			return RESOURCE_BUNDLE.getString(key);
 		}
-		catch(MissingResourceException e)
+		catch(MissingResourceException _)
 		{
 			return '!' + key + '!';
 		}

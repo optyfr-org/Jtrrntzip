@@ -6,4 +6,5 @@ module trrntzip
 
 	requires org.apache.commons.codec;
 	requires org.apache.commons.io;
+	requires java.logging;
 }
