@@ -7,11 +7,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Scanner;
+import java.util.Set;
+import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.io.FilenameUtils;
 
 public final class Program extends AbstractTorrentZipOptions implements LogCallback
 {
+	static final int EXIT_OK = 0;
+	static final int EXIT_FAILED = 1;
+	static final int EXIT_USAGE = 2;
+
 	public static void main(final String[] args)
 	{
 		if(args.length == 0)
@@ -19,11 +25,11 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 			System.out.println(""); //NOSONAR
 			System.out.println(Messages.getString("Program.MissingPath")); //NOSONAR
 			System.out.println(Messages.getString("Program.Usage")); //NOSONAR
+			System.exit(EXIT_USAGE);
 			return;
 		}
 
-		new Program(args);
-
+		System.exit(new Program(args).run());
 	}
 
 	private TorrentZip tz;
@@ -31,8 +37,15 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 	public Program(final String[] args)
 	{
 		super(args);
+	}
 
-		if(argfiles != null && !argfiles.isEmpty())
+	int run()
+	{
+		if(argfiles == null)
+			return EXIT_OK;
+
+		var failures = 0;
+		if(!argfiles.isEmpty())
 		{
 			tz = new TorrentZip(this, this);
 			for(final File argfile : argfiles)
@@ -40,47 +53,15 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 				// first check if arg is a directory
 				if(argfile.isDirectory())
 				{
-					try
-					{
-						processDir(argfile);
-					}
-					catch(final IOException e)
-					{
-						System.err.println(e.getMessage());
-					}
+					failures += processDir(argfile);
 					continue;
 				}
 
 				// now check if arg is a directory/filename with possible wild cards.
-				String dir = argfile.getParent();
-				if(dir == null)
-					dir = Paths.get(".").toAbsolutePath().normalize().toString(); 
-
-				final String filename = argfile.getName();
-
-				try(DirectoryStream<Path> dirStream = Files.newDirectoryStream(Paths.get(dir), filename))
-				{
-					dirStream.forEach(path -> {
-						final String ext = FilenameUtils.getExtension(path.getFileName().toString());
-						if(ext != null && (ext.equalsIgnoreCase("zip"))) 
-						{
-							try
-							{
-								processFile(path.toFile());
-							}
-							catch(final IOException e)
-							{
-								System.err.println(e.getMessage());
-							}
-						}
-					});
-				}
-				catch(final IOException e)
-				{
-					System.err.println(e.getMessage());
-				}
+				failures += processLiteralFileOrGlob(argfile);
 			}
 		}
+
 		if(guiLaunch)
 		{
 			System.out.format(Messages.getString("Program.Complete"));  //NOSONAR
@@ -89,37 +70,130 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 				scanner.nextLine();
 			}
 		}
+
+		return failures > 0 ? EXIT_FAILED : EXIT_OK;
 	}
 
-	private void processDir(final File dir) throws IOException
+	private int processDir(final File dir)
 	{
 		if(isVerboseLogging())
 			System.out.println(Messages.getString("Program.CheckingDir") + dir); //NOSONAR
 
-		File[] files = dir.listFiles();
-		if(files==null)
-            return;
-        for(final File f : files)
+		final File[] files = dir.listFiles();
+		if(files == null)
+		{
+			System.err.println(dir);
+			return 1;
+		}
+
+		var failures = 0;
+		for(final File f : files)
 		{
 			if(f.isDirectory())
 			{
 				if(!noRecursion)
-					processDir(f);
+					failures += processDir(f);
 			}
 			else
 			{
 				final String ext = FilenameUtils.getExtension(f.getName());
-				if(ext != null && (ext.equalsIgnoreCase("zip"))) 
+				if(ext != null && ext.equalsIgnoreCase("zip"))
 				{
-					tz.process(f);
+					failures += processSingle(f);
 				}
 			}
 		}
+		return failures;
 	}
 
-	private void processFile(final File file) throws IOException
+	private int processLiteralFileOrGlob(final File argfile)
 	{
-		tz.process(file);
+		// an argument matching an existing file is processed as-is, this keeps
+		// literal names that contain glob metacharacters working
+		if(argfile.isFile())
+			return processSingle(argfile);
+
+		String dir = argfile.getParent();
+		if(dir == null)
+			dir = Paths.get(".").toAbsolutePath().normalize().toString();
+
+		final String filename = argfile.getName();
+
+		try(DirectoryStream<Path> dirStream = openDirectoryStream(Paths.get(dir), filename))
+		{
+			var failures = 0;
+			for(final Path path : dirStream)
+			{
+				final String ext = FilenameUtils.getExtension(path.getFileName().toString());
+				if(ext == null || !ext.equalsIgnoreCase("zip"))
+					continue;
+				failures += processSingle(path.toFile());
+			}
+			return failures;
+		}
+		catch(final IOException e)
+		{
+			System.err.println(describe(e));
+			return 1;
+		}
+	}
+
+	private static DirectoryStream<Path> openDirectoryStream(final Path dir, final String glob) throws IOException
+	{
+		try
+		{
+			return Files.newDirectoryStream(dir, glob);
+		}
+		catch(final PatternSyntaxException e)
+		{
+			// the pattern contains glob metacharacters that do not form a valid
+			// pattern, retry with all metacharacters escaped so the literal name works
+			return Files.newDirectoryStream(dir, escapeGlob(glob));
+		}
+	}
+
+	private static String escapeGlob(final String glob)
+	{
+		final var sb = new StringBuilder();
+		for(var i = 0; i < glob.length(); i++)
+		{
+			final char c = glob.charAt(i);
+			switch(c)
+			{
+				case '*':
+				case '?':
+				case '\\':
+				case '[':
+				case ']':
+				case '{':
+				case '}':
+					sb.append('\\');
+					sb.append(c);
+					break;
+				default:
+					sb.append(c);
+			}
+		}
+		return sb.toString();
+	}
+
+	private int processSingle(final File file)
+	{
+		try
+		{
+			final Set<TrrntZipStatus> status = tz.process(file);
+			return status.contains(TrrntZipStatus.CORRUPTZIP) ? 1 : 0;
+		}
+		catch(final IOException e)
+		{
+			System.err.println(describe(e));
+			return 1;
+		}
+	}
+
+	private static String describe(final IOException e)
+	{
+		return e.getMessage() == null ? e.toString() : e.getMessage();
 	}
 
 	@Override

@@ -16,6 +16,9 @@ graalvmNative {
             }
             buildArgs.add('-H:+AddAllCharsets')
             buildArgs.add('-H:+ReportExceptionStackTraces')
+            // agent metadata is copied to build/native/agent-config (see metadataCopy),
+            // keep it visible to native-image without polluting src/main/resources
+            configurationFileDirectories.from(layout.buildDirectory.dir("native/agent-config"))
         }
         all {
             resources.autodetect()
@@ -32,7 +35,7 @@ graalvmNative {
 
         metadataCopy {
             inputTaskNames.add("run")
-            outputDirectories.add("src/main/resources/META-INF/native-image/")
+            outputDirectories.add("build/native/agent-config")
             mergeWithExisting = false
         }
     }

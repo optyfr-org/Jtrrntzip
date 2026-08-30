@@ -171,7 +171,7 @@ public final class LocalFile implements Closeable {
 
             return ZipReturn.ZIPGOOD;
         } catch (Exception e) {
-            LOGGER.log(Level.FINE, e::getMessage);
+            LOGGER.log(Level.FINE, "error reading central directory entry", e);
             return ZipReturn.ZIPCENTRALDIRERROR;
         }
 
@@ -216,7 +216,8 @@ public final class LocalFile implements Closeable {
 
             byte[] testcrc = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(UnsignedTypes.fromUInt(tcrc32.getValue())).array();
             fileStatus = Arrays.equals(getCrc(), testcrc) ? ZipReturn.ZIPGOOD : ZipReturn.ZIPCRCDECODEERROR;
-        } catch (Exception _) {
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "error decoding zip entry data", e);
             fileStatus = ZipReturn.ZIPDECODEERROR;
         }
     }
@@ -303,7 +304,7 @@ public final class LocalFile implements Closeable {
 
             return ZipReturn.ZIPGOOD;
         } catch (Exception e) {
-            LOGGER.log(Level.FINE, e::getMessage);
+            LOGGER.log(Level.FINE, "error reading local file header", e);
             return ZipReturn.ZIPLOCALFILEHEADERERROR;
         }
 
@@ -349,7 +350,7 @@ public final class LocalFile implements Closeable {
             return ZipReturn.ZIPGOOD;
 
         } catch (Exception e) {
-            LOGGER.log(Level.FINE, e::getMessage);
+            LOGGER.log(Level.FINE, "error reading local file header", e);
             return ZipReturn.ZIPLOCALFILEHEADERERROR;
         }
 

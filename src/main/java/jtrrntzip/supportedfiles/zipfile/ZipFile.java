@@ -18,6 +18,7 @@ import java.util.zip.Deflater;
 import java.util.zip.Inflater;
 
 import jtrrntzip.Messages;
+import jtrrntzip.TorrentZipCheck;
 import jtrrntzip.ZipOpenType;
 import jtrrntzip.ZipReturn;
 import jtrrntzip.ZipStatus;
@@ -34,7 +35,9 @@ public final class ZipFile implements ICompress
 	
 	private static final void createDirForFile(File sFilename)
 	{
-		sFilename.getParentFile().mkdirs();
+		final File parent = sFilename.getParentFile();
+		if (parent != null)
+			parent.mkdirs();
 	}
 
 	public static final String zipErrorMessageText(ZipReturn zS)
@@ -178,8 +181,10 @@ public final class ZipFile implements ICompress
 		esbc.putUInt(ENDOFCENTRALDIRSIGNATURE);
 		esbc.putUShort(0); // NumberOfThisDisk
 		esbc.putUShort(0); // NumberOfThisDiskCenterDir
-		esbc.putUShort((localFiles.size() >= 0xffff ? 0xffff : localFiles.size())); // TotalNumberOfEnteriesDisk
-		esbc.putUShort((localFiles.size() >= 0xffff ? 0xffff : localFiles.size())); // TotalNumber of entries in the central directory
+		// 65,535 entries is the largest count a classic EOCD can legally store,
+		// the 0xffff sentinel written for larger counts resolves via the zip64 EOCD
+		esbc.putUShort((localFiles.size() > 0xffff ? 0xffff : localFiles.size())); // TotalNumberOfEnteriesDisk
+		esbc.putUShort((localFiles.size() > 0xffff ? 0xffff : localFiles.size())); // TotalNumber of entries in the central directory
 		esbc.putUInt((centerDirSize.compareTo(BigInteger.valueOf(0xffffffffL)) >= 0 ? 0xffffffffL : centerDirSize).longValue());
 		esbc.putUInt((centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) >= 0 ? 0xffffffffL : centerDirStart).longValue());
 		esbc.putUShort(fileComment.length);
@@ -367,6 +372,8 @@ public final class ZipFile implements ICompress
 		centerDirStart = BigInteger.valueOf(esbc.position());
 		if (centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) >= 0)
 			zip64 = true;
+		if (localFiles.size() > 0xffff)
+			zip64 = true;
 
 		esbc.startChecksum();
 		for (final LocalFile t : localFiles)
@@ -531,7 +538,7 @@ public final class ZipFile implements ICompress
 	{
 		for (var i = 0; i < localFilesCount.intValue() - 1; i++)
 		{
-			if (localFiles.get(i).getFileName().compareToIgnoreCase(localFiles.get(i + 1).getFileName()) >= 0)
+			if (TorrentZipCheck.trrntZipStringCompare(localFiles.get(i).getFileName(), localFiles.get(i + 1).getFileName()) >= 0)
 			{
 				return false;
 			}
@@ -545,7 +552,7 @@ public final class ZipFile implements ICompress
 		{
 			String filename0 = localFiles.get(i).getFileName();
 			String filename1 = localFiles.get(i + 1).getFileName();
-			if (filename0.charAt(filename0.length() - 1) == '/' && filename1.length() > filename0.length() && filename0.compareToIgnoreCase(filename1.substring(0, filename0.length())) == 0)
+			if (filename0.charAt(filename0.length() - 1) == '/' && filename1.length() > filename0.length() && TorrentZipCheck.trrntZipStringCompare(filename0, filename1.substring(0, filename0.length())) == 0)
 			{
 				return false;
 			}
@@ -555,8 +562,14 @@ public final class ZipFile implements ICompress
 
 	private final ZipReturn readZip64StructuresIfNeeded(long endOfCentralDir) throws IOException
 	{
-		if (centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || centerDirSize.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || localFilesCount.compareTo(BigInteger.valueOf(0xffff)) == 0)
+		final boolean sizeSentinel = centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || centerDirSize.compareTo(BigInteger.valueOf(0xffffffffL)) == 0;
+		final boolean countSentinel = localFilesCount.compareTo(BigInteger.valueOf(0xffff)) == 0;
+		if (sizeSentinel || countSentinel)
 		{
+			// the classic EOCD may legally store the literal count 65,535, so the
+			// zip64 path is only taken when the locator is actually present
+			if (countSentinel && !sizeSentinel && !hasZip64Locator(endOfCentralDir))
+				return ZipReturn.ZIPGOOD;
 			zip64 = true;
 			esbc.position(endOfCentralDir - 20);
 			ZipReturn zRet = zip64EndOfCentralDirectoryLocatorRead();
@@ -570,6 +583,12 @@ public final class ZipFile implements ICompress
 		return ZipReturn.ZIPGOOD;
 	}
 
+	private final boolean hasZip64Locator(long endOfCentralDir) throws IOException
+	{
+		esbc.position(endOfCentralDir - 20);
+		return esbc.getUInt() == ZIP64ENDOFCENTRALDIRECTORYLOCATOR;
+	}
+
 	private final boolean isTorrentZipped() throws IOException
 	{
 		if (fileComment.length == 22 && new String(fileComment, StandardCharsets.US_ASCII).substring(0, 14).equals("TORRENTZIPPED-")) //$NON-NLS-1$ //$NON-NLS-2$
@@ -581,7 +600,7 @@ public final class ZipFile implements ICompress
 			long r = esbc.endChecksum();
 			final var tcrc = new String(fileComment, StandardCharsets.US_ASCII).substring(14, 22); //$NON-NLS-1$
 			final var zcrc = String.format("%08X", r); //$NON-NLS-1$
-			if (tcrc.equalsIgnoreCase(zcrc))
+			if (tcrc.equals(zcrc))
 				return true;
 		}
 		return false;

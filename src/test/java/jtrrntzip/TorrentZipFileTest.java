@@ -35,6 +35,10 @@ import jtrrntzip.supportedfiles.zipfile.ZipFile;
 
 class TorrentZipFileTest {
 
+    private static final boolean DUMP_ENABLED = Boolean.getBoolean("jtrrntzip.test.dump");
+
+    private static final Path DUMP_ROOT = Path.of("build", "dump");
+
     @TempDir
     Path tempDir;
 
@@ -87,6 +91,29 @@ class TorrentZipFileTest {
         TorrentZip tz = new TorrentZip(log, options);
         var status = tz.process(zipFile);
         assertTrue(status.contains(TrrntZipStatus.VALIDTRRNTZIP), "Expected VALIDTRRNTZIP for " + resourceName + " but got " + status);
+    }
+
+    @ParameterizedTest
+    @MethodSource("torrentZipResources")
+    void testGoldenCorpusOrderIsStableUnderReferenceComparator(String resourceName) throws IOException, URISyntaxException {
+        URL resourceUrl = getClass().getResource("/" + resourceName);
+        assertNotNull(resourceUrl, "Resource not found: " + resourceName);
+        File zipFile = new File(resourceUrl.toURI());
+
+        jtrrntzip.supportedfiles.zipfile.ZipFile zf = new jtrrntzip.supportedfiles.zipfile.ZipFile();
+        try {
+            assertEquals(ZipReturn.ZIPGOOD, zf.zipFileOpen(zipFile, zipFile.lastModified(), true),
+                    "Expected ZIPGOOD for " + resourceName);
+            for (int i = 1; i < zf.localFilesCount(); i++) {
+                String prev = zf.filename(i - 1);
+                String next = zf.filename(i);
+                assertTrue(TorrentZipCheck.trrntZipStringCompare(prev, next) < 0,
+                        "Corpus order for " + resourceName + " must be ascending per the reference comparator: "
+                                + prev + " !< " + next);
+            }
+        } finally {
+            try { zf.zipFileClose(); zf.close(); } catch (Exception _) { /* ignore */ }
+        }
     }
 
     @ParameterizedTest
@@ -285,9 +312,11 @@ class TorrentZipFileTest {
         return "";
     }
 
-    // === Central Directory Dump for debugging ===
+    // === Central Directory Dump for debugging, disabled unless -Djtrrntzip.test.dump=true ===
     private void dumpCentralDirectoryComparison(File orig, File produced, String base) throws IOException {
-        Path dumpRoot = Path.of("dump", base);
+        if (!DUMP_ENABLED) return;
+
+        Path dumpRoot = DUMP_ROOT.resolve(base);
         Files.createDirectories(dumpRoot);
 
         byte[] cdOrig = extractCentralDirBytes(orig);

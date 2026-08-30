@@ -54,7 +54,7 @@ public class TorrentZipCheck
 			thisSortFound = false;
 			for(var i = 0; i < zippedFiles.size() - 1; i++)
 			{
-				final int c = zippedFiles.get(i).getName().compareToIgnoreCase(zippedFiles.get(i + 1).getName());
+				final int c = trrntZipStringCompare(zippedFiles.get(i).getName(), zippedFiles.get(i + 1).getName());
 				if(c > 0)
 				{
 					final var zf = zippedFiles.get(i);
@@ -121,22 +121,66 @@ public class TorrentZipCheck
 			}
 		}
 
-		// check for repeat files
+		// ***************************** RULE 4 *************************************
+		// Diverges from the reference trrntzipDN, which only reports duplicates here:
+		// keep one entry and let the caller rebuild when name, CRC and size are identical,
+		// differing duplicates mark the zip corrupt so the caller skips the rebuild.
 		var error4 = false;
 		for(var i = 0; i < zippedFiles.size() - 1; i++)
 		{
-			if(zippedFiles.get(i).getName().equals(zippedFiles.get(i + 1).getName()))
+			final var a = zippedFiles.get(i);
+			final var b = zippedFiles.get(i + 1);
+			if(!a.getName().equals(b.getName()))
+				continue;
+
+			tzStatus.add(TrrntZipStatus.REPEATFILESFOUND);
+			if(!error4 && StatusLogCallBack.isVerboseLogging())
 			{
-				tzStatus.add(TrrntZipStatus.REPEATFILESFOUND);
-				if(!error4 && StatusLogCallBack.isVerboseLogging())
-				{
-					error4 = true;
-					StatusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.DuplicateFileEntriesFound")); //$NON-NLS-1$
-				}
+				error4 = true;
+				StatusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.DuplicateFileEntriesFound")); //$NON-NLS-1$
+			}
+
+			if(a.getCrc() == b.getCrc() && a.getSize().equals(b.getSize()))
+			{
+				zippedFiles.remove(i + 1);
+				i--;
+			}
+			else
+			{
+				tzStatus.add(TrrntZipStatus.CORRUPTZIP);
 			}
 		}
 
 		return tzStatus;
+	}
+
+	// perform an ascii based lower case string file compare
+	public static int trrntZipStringCompare(final String string1, final String string2)
+	{
+		final char[] bytes1 = string1.toCharArray();
+		final char[] bytes2 = string2.toCharArray();
+
+		var pos1 = 0;
+		var pos2 = 0;
+
+		for (;;)
+		{
+			if (pos1 == bytes1.length)
+				return ((pos2 == bytes2.length) ? 0 : -1);
+			if (pos2 == bytes2.length)
+				return 1;
+
+			var byte1 = bytes1[pos1++];
+			var byte2 = bytes2[pos2++];
+
+			if (byte1 >= 65 && byte1 <= 90) byte1 += 0x20;
+			if (byte2 >= 65 && byte2 <= 90) byte2 += 0x20;
+
+			if (byte1 < byte2)
+				return -1;
+			if (byte1 > byte2)
+				return 1;
+		}
 	}
 
 }

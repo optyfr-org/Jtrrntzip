@@ -64,8 +64,18 @@ public final class TorrentZip
 			zipFile.get().zipFileClose();
 			return tzs;
 		}
+		// differing duplicate entries mark the zip corrupt, a rebuild cannot fix them
+		if(tzs.contains(TrrntZipStatus.CORRUPTZIP))
+		{
+			statusLogCallBack.statusLogCallBack(Messages.getString("TorrentZip.ZipFileCorrupt")); //$NON-NLS-1$
+			zipFile.get().zipFileClose();
+			return tzs;
+		}
 		statusLogCallBack.statusLogCallBack(Messages.getString("TorrentZip.TorrentZipping")); //$NON-NLS-1$
-		return TorrentZipRebuild.reZipFiles(zippedFiles, zipFile.get(), buffer, statusLogCallBack);
+		final Set<TrrntZipStatus> rebuilt = TorrentZipRebuild.reZipFiles(zippedFiles, zipFile.get(), buffer, statusLogCallBack);
+		if(rebuilt.contains(TrrntZipStatus.CORRUPTZIP))
+			statusLogCallBack.statusLogCallBack(Messages.getString("TorrentZip.ZipFileCorrupt")); //$NON-NLS-1$
+		return rebuilt;
 	}
 
 	private final EnumSet<TrrntZipStatus> openZip(final File f, final AtomicReference<ICompress> zipFile) throws IOException

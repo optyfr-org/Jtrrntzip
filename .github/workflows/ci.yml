@@ -14,8 +14,10 @@ jobs:
     steps:
     - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       with:
-        submodules: true
         persist-credentials: false
+
+    - name: Validate Gradle wrapper
+      uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
 
     - name: Set up JDK 25
       uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -27,7 +29,7 @@ jobs:
       uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
 
     - name: Build with Gradle
-      run: ./gradlew build -xtest
+      run: ./gradlew build -x test
 
     - name: Save build cache
       id: cache
@@ -35,7 +37,6 @@ jobs:
       env:
         cache-name: cache-builds
       with:
-        enableCrossOsArchive: true
         path: build
         key: ${{ env.cache-name }}-${{ github.sha }}
 
@@ -46,7 +47,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       with:
-        submodules: recursive
         persist-credentials: false
 
     - name: Set up JDK 25
@@ -54,7 +54,9 @@ jobs:
       with:
         distribution: 'graalvm'
         java-version: '25'
-        cache: 'gradle'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
 
     - name: Restore build cache
       id: cache
@@ -62,7 +64,6 @@ jobs:
       env:
         cache-name: cache-builds
       with:
-        enableCrossOsArchive: true
         path: build
         key: ${{ env.cache-name }}-${{ github.sha }}
 
@@ -71,7 +72,7 @@ jobs:
 
     - name: Upload JaCoCo coverage report
       if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: jacoco-coverage-report
         path: build/reports/jacoco/
@@ -84,7 +85,6 @@ jobs:
       env:
         cache-name: cache-test
       with:
-        enableCrossOsArchive: true
         path: |
           build/native
           build/classes/java/test
@@ -110,7 +110,6 @@ jobs:
       with:
         distribution: 'graalvm'
         java-version: '25'
-        cache: 'gradle'
 
     - name: Restore build cache
       id: cache
@@ -118,7 +117,6 @@ jobs:
       env:
         cache-name: cache-builds
       with:
-        enableCrossOsArchive: true
         path: build
         key: ${{ env.cache-name }}-${{ github.sha }}
 
@@ -128,7 +126,6 @@ jobs:
       env:
         cache-name: cache-test
       with:
-        enableCrossOsArchive: true
         path: |
           build/native
           build/classes/java/test

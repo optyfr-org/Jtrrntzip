@@ -11,10 +11,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.zip.CRC32;
 import java.util.zip.CheckedInputStream;
 import java.util.zip.DeflaterOutputStream;
@@ -31,6 +32,8 @@ public final class TorrentZipRebuild
 		throw new IllegalStateException("Utility class");
 	}
 
+	private static final Logger LOGGER = Logger.getLogger(TorrentZipRebuild.class.getName());
+
 	public static final Set<TrrntZipStatus> reZipFiles(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final byte[] buffer, final LogCallback logCallback)
 	{
 		if (originalZipFile == null)
@@ -46,20 +49,10 @@ public final class TorrentZipRebuild
 		}
 		catch (final Exception e)
 		{
-			Optional.ofNullable(originalZipFile).ifPresent(t -> {
-				try
-				{
-					t.zipFileClose();
-					t.close();
-				}
-				catch (final IOException e1)
-				{
-					System.err.println(e1.getMessage());
-				}
-			});
+			LOGGER.log(Level.WARNING, e, () -> "rebuild of " + filename + " failed");
+			closeQuietly(originalZipFile);
 			return EnumSet.of(TrrntZipStatus.CORRUPTZIP);
 		}
-
 	}
 
 	/**
@@ -72,95 +65,137 @@ public final class TorrentZipRebuild
 	 * @param outfilename
 	 * @return
 	 * @throws IOException
-	 * @throws Exception
 	 */
-	private static Set<TrrntZipStatus> reZipFiles(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final byte[] buffer, final LogCallback logCallback, final Path filename, final Path tmpFilename, final Path outfilename) throws IOException, Exception
+	private static Set<TrrntZipStatus> reZipFiles(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final byte[] buffer, final LogCallback logCallback, final Path filename, final Path tmpFilename, final Path outfilename) throws IOException
 	{
 		Files.deleteIfExists(tmpFilename);
-		try (ICompress zipFileOut = new ZipFile())
+		final ICompress zipFileOut = new ZipFile();
+		var corrupt = false;
+		try
 		{
-			try
+			zipFileOut.zipFileCreate(tmpFilename.toFile());
+
+			// by now the zippedFiles have been sorted so just loop over them
+			for (var i = 0; i < zippedFiles.size(); i++)
 			{
-				zipFileOut.zipFileCreate(tmpFilename.toFile());
+				logCallback.statusCallBack((int) ((double) (i + 1) / (zippedFiles.size()) * 100));
 
-				// by now the zippedFiles have been sorted so just loop over them
-				for (var i = 0; i < zippedFiles.size(); i++)
+				final var t = zippedFiles.get(i);
+
+				if (logCallback.isVerboseLogging())
+					logCallback.statusLogCallBack(String.format("%15s %s %s", t.getSize(), t.toString(), t.getName())); //$NON-NLS-1$
+
+				final AtomicReference<InputStream> readStream = new AtomicReference<>();
+				final AtomicReference<BigInteger> streamSize = new AtomicReference<>();
+				final var compMethod = new AtomicInteger();
+
+				ZipReturn zrInput = ZipReturn.ZIPUNTESTED;
+				if (originalZipFile instanceof ZipFile ozf)
 				{
-					logCallback.statusCallBack((int) ((double) (i + 1) / (zippedFiles.size()) * 100));
-
-					final var t = zippedFiles.get(i);
-
-					if (logCallback.isVerboseLogging())
-						logCallback.statusLogCallBack(String.format("%15s %s %s", t.getSize(), t.toString(), t.getName())); //$NON-NLS-1$
-
-					final AtomicReference<InputStream> readStream = new AtomicReference<>();
-					final AtomicReference<BigInteger> streamSize = new AtomicReference<>();
-					final var compMethod = new AtomicInteger();
-
-					ZipReturn zrInput = ZipReturn.ZIPUNTESTED;
-					ZipFile z = null;
-					if (originalZipFile instanceof ZipFile ozf)
-					{
-						z = ozf;
-						zrInput = z.zipFileOpenReadStream(t.getIndex(), false, readStream, streamSize, compMethod);
-					}
-
-					final AtomicReference<OutputStream> writeStream = new AtomicReference<>();
-					final ZipReturn zrOutput = zipFileOut.zipFileOpenWriteStream(false, true, t.getName(), streamSize.get(), (short) 8, writeStream);
-
-					if (zrInput != ZipReturn.ZIPGOOD || zrOutput != ZipReturn.ZIPGOOD)
-					{
-						// Error writing local File.
-						zipFileOut.zipFileClose();
-						zipFileOut.close();
-						originalZipFile.zipFileClose();
-						Files.delete(tmpFilename);
-						return EnumSet.of(TrrntZipStatus.CORRUPTZIP);
-					}
-
-					final var crcCs = new CheckedInputStream(readStream.get(), new CRC32());
-					final var bcrcCs = new BufferedInputStream(crcCs, buffer.length);
-					final var bWriteStream = new BufferedOutputStream(writeStream.get(), buffer.length);
-
-					BigInteger sizetogo = streamSize.get();
-					while (sizetogo.compareTo(BigInteger.valueOf(0)) > 0)
-					{
-						final int sizenow = sizetogo.compareTo(BigInteger.valueOf(buffer.length)) > 0 ? buffer.length : sizetogo.intValue();
-						bcrcCs.read(buffer, 0, sizenow);
-						bWriteStream.write(buffer, 0, sizenow);
-						sizetogo = sizetogo.subtract(BigInteger.valueOf(sizenow));
-					}
-					bWriteStream.flush();
-					if (writeStream.get() instanceof DeflaterOutputStream ws)
-						ws.finish();
-
-					if (z != null)
-						originalZipFile.zipFileCloseReadStream();
-
-					final long crc = crcCs.getChecksum().getValue();
-
-					if ((int) crc != t.getCrc())
-						return EnumSet.of(TrrntZipStatus.CORRUPTZIP);
-
-					zipFileOut.zipFileCloseWriteStream(t.getLECRC());
+					zrInput = ozf.zipFileOpenReadStream(t.getIndex(), false, readStream, streamSize, compMethod);
 				}
 
-				zipFileOut.zipFileClose();
+				final AtomicReference<OutputStream> writeStream = new AtomicReference<>();
+				final ZipReturn zrOutput = zipFileOut.zipFileOpenWriteStream(false, true, t.getName(), streamSize.get(), (short) 8, writeStream);
+
+				if (zrInput != ZipReturn.ZIPGOOD || zrOutput != ZipReturn.ZIPGOOD)
+				{
+					corrupt = true;
+					break;
+				}
+
+				final var crcCs = new CheckedInputStream(readStream.get(), new CRC32());
+				final var bcrcCs = new BufferedInputStream(crcCs, buffer.length);
+				final var bWriteStream = new BufferedOutputStream(writeStream.get(), buffer.length);
+
+				if (!copyFully(bcrcCs, bWriteStream, streamSize.get().longValue(), buffer))
+				{
+					corrupt = true;
+					break;
+				}
+
+				bWriteStream.flush();
+				if (writeStream.get() instanceof DeflaterOutputStream ws)
+					ws.finish();
+
+				originalZipFile.zipFileCloseReadStream();
+
+				final long crc = crcCs.getChecksum().getValue();
+
+				if ((int) crc != t.getCrc())
+				{
+					corrupt = true;
+					break;
+				}
+
+				zipFileOut.zipFileCloseWriteStream(t.getLECRC());
 			}
-			catch (Exception e)
+
+			if (!corrupt)
 			{
-				if (zipFileOut != null)
+				zipFileOut.zipFileClose();
+				originalZipFile.zipFileClose();
+				originalZipFile.close();
+				if (!filename.equals(outfilename))
+					Files.delete(filename);
+				Files.copy(tmpFilename, outfilename, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+				Files.delete(tmpFilename);
+				return EnumSet.of(TrrntZipStatus.VALIDTRRNTZIP);
+			}
+
+			return EnumSet.of(TrrntZipStatus.CORRUPTZIP);
+		}
+		finally
+		{
+			if (zipFileOut.zipOpen() != ZipOpenType.CLOSED)
+			{
+				try
+				{
 					zipFileOut.zipFileCloseFailed();
-				throw e;
+				}
+				catch (final IOException e)
+				{
+					LOGGER.log(Level.FINE, e, () -> "failed close of " + tmpFilename);
+				}
+			}
+			closeQuietly(originalZipFile);
+			try
+			{
+				Files.deleteIfExists(tmpFilename);
+			}
+			catch (final IOException e)
+			{
+				LOGGER.log(Level.FINE, e, () -> "failed to delete " + tmpFilename);
 			}
 		}
-		originalZipFile.zipFileClose();
-		originalZipFile.close();
-		if (!filename.equals(outfilename))
-			Files.delete(filename);
-		Files.copy(tmpFilename, outfilename, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
-		Files.delete(tmpFilename);
-		return EnumSet.of(TrrntZipStatus.VALIDTRRNTZIP);
+	}
+
+	static boolean copyFully(final InputStream in, final OutputStream out, final long size, final byte[] buffer) throws IOException
+	{
+		var total = 0L;
+		while (total < size)
+		{
+			final var sizenow = (int) Math.min(buffer.length, size - total);
+			final var n = in.read(buffer, 0, sizenow);
+			if (n <= 0)
+				return false;
+			out.write(buffer, 0, n);
+			total += n;
+		}
+		return true;
+	}
+
+	private static void closeQuietly(final ICompress zipFile)
+	{
+		try
+		{
+			zipFile.zipFileClose();
+			zipFile.close();
+		}
+		catch (final IOException e)
+		{
+			LOGGER.log(Level.FINE, e, () -> "failed to close " + zipFile.zipFilename());
+		}
 	}
 
 }

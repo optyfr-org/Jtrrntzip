@@ -19,10 +19,7 @@ java {
     withSourcesJar()
 }
 
-def props = new Properties()
-file("dist/ver.properties").withInputStream { props.load(it) }
-
-version = props.getProperty("Specification-Version") + '.' + props.getProperty("Implementation-Version")
+version = '1.4.0'
 group = "com.github.optyfr"
 
 base {
@@ -32,9 +29,9 @@ base {
 def manifestAttributes = [
     "Manifest-Version"     : "1.0",
     "Specification-Title"  : "Jtrrntzip",
-    "Specification-Version": props.getProperty("Specification-Version"),
+    "Specification-Version": version.substring(0, version.lastIndexOf('.')),
     "Implementation-Title" : "JTrrntzip",
-    "Implementation-Version" : props.getProperty("Implementation-Version"),
+    "Implementation-Version" : version.substring(version.lastIndexOf('.') + 1),
     "Main-Class"           : "jtrrntzip.Program",
 ]
 
