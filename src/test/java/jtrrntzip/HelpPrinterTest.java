@@ -6,10 +6,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Tests for {@link HelpPrinter}.
+ */
+@DisplayName("Tests for the help printer")
 class HelpPrinterTest {
 
+    /** Prints the version banner and every localized option line. */
+    @DisplayName("prints the version banner and every option line")
     @Test
     void printsVersionAndEveryOptionLine() {
         final var out = new ByteArrayOutputStream();
@@ -29,6 +36,8 @@ class HelpPrinterTest {
         assertTrue(text.contains(Messages.getString("AbstractTorrentZipOptions.PauseWhenFinished")));
     }
 
+    /** Prints the usage text before the option list and the pause hint after it. */
+    @DisplayName("prints the option lines in the help order")
     @Test
     void printsOptionLinesInHelpOrder() {
         final var out = new ByteArrayOutputStream();
@@ -45,6 +54,8 @@ class HelpPrinterTest {
                 "the pause hint is printed");
     }
 
+    /** A missing manifest specification version prints as the string null. */
+    @DisplayName("handles a missing specification version")
     @Test
     void handlesMissingSpecificationVersion() {
         final var out = new ByteArrayOutputStream();

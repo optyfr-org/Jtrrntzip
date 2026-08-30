@@ -14,14 +14,21 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/**
+ * Tests for the rebuild of archives into the torrentzip format and the
+ * cleanup performed when a rebuild fails or runs out of data.
+ */
+@DisplayName("Tests for the torrentzip rebuild")
 class TorrentZipRebuildTest {
 
     @TempDir
     Path tempDir;
 
+    /** An input stream that hands out a single byte per read call, however large the buffer is. */
     private static final class OneByteAtATimeInputStream extends InputStream {
         private final byte[] data;
         private int pos;
@@ -44,6 +51,8 @@ class TorrentZipRebuildTest {
         }
     }
 
+    /** copyFully keeps transferring the exact size when the input returns one byte per read. */
+    @DisplayName("copyFully handles one-byte-at-a-time streams")
     @Test
     void copyFullyHandlesStreamsReturningOneByteAtATime() throws Exception {
         final var data = new byte[17 * 1024 + 3];
@@ -58,6 +67,8 @@ class TorrentZipRebuildTest {
         assertArrayEquals(data, out.toByteArray());
     }
 
+    /** An input that ends before the requested size is reported as corruption. */
+    @DisplayName("copyFully treats an early EOF as corruption")
     @Test
     void copyFullyTreatsEofBeforeFullSizeAsCorruption() throws Exception {
         final var data = new byte[100];
@@ -66,6 +77,8 @@ class TorrentZipRebuildTest {
                 "a stream ending early must be reported as corruption");
     }
 
+    /** A rebuild failing on corrupt CRCs leaves no tmp file behind. */
+    @DisplayName("a failed rebuild cleans up the tmp file and unlocks the source")
     @Test
     void rebuildFailureCleansUpTmpFileAndUnlocksSource() throws Exception {
         final var source = tempDir.resolve("corrupt-crc.zip").toFile();
@@ -84,6 +97,8 @@ class TorrentZipRebuildTest {
         Files.delete(source.toPath());
     }
 
+    /** A truncated archive is reported corrupt, left in place and unlocked. */
+    @DisplayName("a truncated zip is reported corrupt and unlocked")
     @Test
     void truncatedZipIsReportedCorruptAndUnlocked() throws Exception {
         final var source = tempDir.resolve("truncated-entry.zip");

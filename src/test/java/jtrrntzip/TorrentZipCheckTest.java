@@ -8,10 +8,18 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Unit tests for the torrentzip rules and the repair decisions of
+ * {@link TorrentZipCheck}.
+ */
+@DisplayName("Tests for the torrentzip rule checks")
 class TorrentZipCheckTest {
 
+    /** The reference compare folds only ASCII upper case letters and orders the shorter prefix first. */
+    @DisplayName("the reference compare folds only ASCII upper case")
     @Test
     void comparatorFoldsOnlyAsciiUpperCases() {
         assertEquals(0, TorrentZipCheck.trrntZipStringCompare("abc", "ABC"));
@@ -22,6 +30,8 @@ class TorrentZipCheckTest {
         assertTrue(TorrentZipCheck.trrntZipStringCompare("abcd", "abc") > 0);
     }
 
+    /** Characters outside of ASCII compare by their raw value, the Kelvin sign does not fold to k. */
+    @DisplayName("the reference compare does not fold non-ASCII characters")
     @Test
     void comparatorDoesNotFoldNonAsciiCharacters() {
         // 'KELVIN SIGN' (U+212A) folds to 'k' in a full unicode case fold but stays raw here,
@@ -34,6 +44,8 @@ class TorrentZipCheckTest {
         assertTrue(aDiaeresis.compareToIgnoreCase(kelvin) > 0);
     }
 
+    /** Identical duplicate entries collapse to a single entry without corrupting the zip. */
+    @DisplayName("identical duplicates keep one entry")
     @Test
     void identicalDuplicatesKeepOneEntry() {
         final List<ZippedFile> zippedFiles = new ArrayList<>();
@@ -50,6 +62,8 @@ class TorrentZipCheckTest {
         assertEquals("b.txt", zippedFiles.get(1).name());
     }
 
+    /** Duplicates that differ in CRC or size mark the zip corrupt and are never merged. */
+    @DisplayName("conflicting duplicates mark the zip corrupt")
     @Test
     void conflictingDuplicatesMarkTheZipCorrupt() {
         final List<ZippedFile> zippedFiles = new ArrayList<>();
@@ -63,6 +77,8 @@ class TorrentZipCheckTest {
         assertEquals(2, zippedFiles.size(), "conflicting duplicates must not be merged");
     }
 
+    /** More than two identical entries collapse to a single entry. */
+    @DisplayName("triple identical duplicates collapse to one entry")
     @Test
     void tripleIdenticalDuplicatesCollapseToASingleEntry() {
         final List<ZippedFile> zippedFiles = new ArrayList<>();
@@ -80,6 +96,8 @@ class TorrentZipCheckTest {
         assertEquals("z.txt", zippedFiles.get(1).name());
     }
 
+    /** Equal sizes do not save duplicates whose CRC differs. */
+    @DisplayName("same size but different CRC duplicates conflict")
     @Test
     void sameSizeDifferentCrcDuplicatesConflict() {
         final List<ZippedFile> zippedFiles = new ArrayList<>();
@@ -92,6 +110,8 @@ class TorrentZipCheckTest {
         assertTrue(status.contains(TrrntZipStatus.CORRUPTZIP));
     }
 
+    /** A detected unsorted list is reordered with the shared reference comparator. */
+    @DisplayName("unsorted input is sorted like the shared comparator")
     @Test
     void unsortedInputIsSortedExactlyLikeTheSharedComparator() {
         final var names = List.of("m.txt", "B.txt", "a.txt", "zz.dat", "b.dat", "Q", "q2", "ac", "ab");
@@ -111,6 +131,8 @@ class TorrentZipCheckTest {
                     "order must match the shared comparator at index " + i);
     }
 
+    /** Already sorted input is left untouched and not flagged. */
+    @DisplayName("already sorted input keeps its order")
     @Test
     void alreadySortedInputKeepsItsOrderWithoutUnsortedFlag() {
         final var names = List.of("a.txt", "B.txt", "b.txt", "z.txt");
@@ -126,6 +148,8 @@ class TorrentZipCheckTest {
             assertEquals(names.get(i), zippedFiles.get(i).name());
     }
 
+    /** Names that are equal after the fold keep their original relative order. */
+    @DisplayName("fold-equal names keep their relative order")
     @Test
     void foldEqualNamesKeepTheirRelativeOrder() {
         final List<ZippedFile> zippedFiles = new ArrayList<>();
@@ -139,6 +163,8 @@ class TorrentZipCheckTest {
         assertEquals("ab", zippedFiles.get(1).name());
     }
 
+    /** The marker predicate rejects exactly the entries the reopen validation rejects. */
+    @DisplayName("the directory marker predicate matches the validation rule")
     @Test
     void unnecessaryDirectoryEntryPredicateMatchesTheValidationRule() {
         assertTrue(TorrentZipCheck.isUnnecessaryDirectoryEntry("dir/", "dir/file.txt"));
@@ -149,6 +175,8 @@ class TorrentZipCheckTest {
         assertFalse(TorrentZipCheck.isUnnecessaryDirectoryEntry("file.txt", "file.txt/child"));
     }
 
+    /** Marker entries are removed exactly where the predicate matches. */
+    @DisplayName("directory markers are removed exactly like the predicate")
     @Test
     void checkZipFilesRemovesDirectoryMarkersExactlyLikeThePredicate() {
         final List<ZippedFile> zippedFiles = new ArrayList<>();
@@ -164,6 +192,7 @@ class TorrentZipCheckTest {
         assertEquals("keep/", zippedFiles.get(1).name());
     }
 
+    /** Creates an entry with the given name, CRC and uncompressed size. */
     private static ZippedFile zippedFile(final String name, final int crc, final long size) {
         return new ZippedFile(0, name, size, crc);
     }

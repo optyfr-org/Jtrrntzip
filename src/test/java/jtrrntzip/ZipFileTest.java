@@ -16,16 +16,24 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import jtrrntzip.supportedfiles.zipfile.ZipFile;
 
+/**
+ * Tests for the low level reading and writing of
+ * {@link jtrrntzip.supportedfiles.zipfile.ZipFile}.
+ */
+@DisplayName("Tests for the low level zip reading and writing")
 class ZipFileTest {
 
     @TempDir
     Path tempDir;
 
+    /** The literal 65,535 entry count needs no zip64 structures and converts cleanly. */
+    @DisplayName("65,535 entries round trip without zip64")
     @Test
     void exactly65535EntriesRoundTripWithoutZip64() throws Exception {
         final var zip = tempDir.resolve("count-65535.zip");
@@ -38,6 +46,8 @@ class ZipFileTest {
         assertTrue(status.contains(TrrntZipStatus.VALIDTRRNTZIP), "expected valid torrent zip but got " + status);
     }
 
+    /** One entry past the classic count writes and reads the zip64 structures. */
+    @DisplayName("65,536 entries round trip with zip64")
     @Test
     void exactly65536EntriesRoundTripWithZip64() throws Exception {
         final var zip = tempDir.resolve("count-65536.zip");
@@ -50,6 +60,7 @@ class ZipFileTest {
         assertTrue(status.contains(TrrntZipStatus.VALIDTRRNTZIP), "expected valid torrent zip but got " + status);
     }
 
+    /** Generates count ascending zero padded entry names. */
     private static List<String> sortedNames(final int count) {
         final List<String> names = new ArrayList<>(count);
         for (var i = 0; i < count; i++)
@@ -57,6 +68,7 @@ class ZipFileTest {
         return names;
     }
 
+    /** Reopens the archive and asserts the entry count survives the round trip. */
     private static void assertOpensWithCount(final Path zip, final int expectedCount) throws IOException {
         try (var openZip = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true),
@@ -66,6 +78,8 @@ class ZipFileTest {
         }
     }
 
+    /** A truncated archive does not open. */
+    @DisplayName("a truncated zip is rejected")
     @Test
     void truncatedZipIsRejected() throws Exception {
         final var zip = tempDir.resolve("truncated.zip");
@@ -81,6 +95,8 @@ class ZipFileTest {
         }
     }
 
+    /** Abandoning a written archive deletes its partial output file. */
+    @DisplayName("closeFailed deletes the partial output")
     @Test
     void zipFileCloseFailedDeletesThePartialOutput() throws Exception {
         final var zip = tempDir.resolve("failed.zip");
@@ -94,6 +110,8 @@ class ZipFileTest {
         assertFalse(Files.exists(zip), "closeFailed must delete the partial output file");
     }
 
+    /** Creating an archive whose path has no parent directory succeeds. */
+    @DisplayName("create accepts a path without a parent directory")
     @Test
     void zipFileCreateAcceptsPathWithoutParentDirectory() throws Exception {
         final var relative = new File("jtrrntzip-relative-create-test.zip");
@@ -109,6 +127,8 @@ class ZipFileTest {
         }
     }
 
+    /** A lower cased TORRENTZIPPED comment fails the torrentzip detection. */
+    @DisplayName("the torrentzip comment CRC match is case sensitive")
     @Test
     void torrentZipCommentCrcMatchIsCaseSensitive() throws Exception {
         final var zip = tempDir.resolve("lowercase-comment.zip");
@@ -128,6 +148,8 @@ class ZipFileTest {
         }
     }
 
+    /** Non-ASCII names fold per the raw reference comparator after the conversion. */
+    @DisplayName("non-ASCII names follow the reference fold order")
     @Test
     void nonAsciiNamesAreOrderedPerReferenceFoldAfterConversion() throws Exception {
         // 'KELVIN SIGN' (U+212A) sorts before 'Ä' (U+00C4) under a full unicode fold,
@@ -152,6 +174,8 @@ class ZipFileTest {
         }
     }
 
+    /** UTF-8 entry names survive the conversion and reopen in raw code unit order. */
+    @DisplayName("UTF-8 names survive the conversion")
     @Test
     void utf8NamesSurviveTorrentZipConversion() throws Exception {
         final var zip = tempDir.resolve("utf8.zip");
@@ -172,6 +196,7 @@ class ZipFileTest {
         }
     }
 
+    /** Writes a single entry stored zip with a small text payload. */
     private static void writeSingleEntryStoredZip(final Path zip, final String name) throws IOException {
         final Map<String, byte[]> entries = new LinkedHashMap<>();
         entries.put(name, "content".getBytes(StandardCharsets.UTF_8));

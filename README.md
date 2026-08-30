@@ -29,6 +29,38 @@ The full specification lives in the
 [torrentzip documentation](https://wiki.romvault.com/doku.php?id=torrentzip) and in the `specs/` folder
 of this repository.
 
+## Architecture
+
+The code is organized in three layers, each depending only on the layers
+below it:
+
+```
+src/main/java
+ |- jtrrntzip                        command line front end and engine
+ |   |- Program, CliOptions, HelpPrinter   argument parsing and output
+ |   |- TorrentZip                   drives the processing of one archive
+ |   |- TorrentZipCheck              checks and repairs the torrentzip rules
+ |   |- TorrentZipRebuild            rebuilds an archive via a sibling .tmp file
+ |
+ |- jtrrntzip.supportedfiles        archive independent support
+     |- ICompress                   the sealed archive abstraction
+     |- EnhancedSeekableByteChannel little endian and CRC-32 primitives
+     |- UnsignedTypes               unsigned integer helpers
+     |- zipfile                     low level zip support
+         |- ZipFile                 zip reading/writing, zip64 and torrentzip
+         |- LocalFile               a single archive entry
+```
+
+`TorrentZip.process()` runs the flow for one archive: `ZipFile` opens it and
+detects the torrentzip state from the `TORRENTZIPPED-XXXXXXXX` comment
+checksum, `TorrentZipCheck` validates the entries against the four torrentzip
+rules and repairs the fixable violations in memory, and `TorrentZipRebuild`
+re-creates the archive entry by entry before moving it into place. Problems
+breaking the format beyond repair, for example conflicting duplicate entries,
+mark the archive corrupt and leave it untouched.
+
+The full API reference lives in the Javadoc (`./gradlew javadoc`), and the
+behavior of each layer is covered by the JUnit tests in `src/test/java`.
 ## Usage
 
 ```

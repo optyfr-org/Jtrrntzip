@@ -13,16 +13,24 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import jtrrntzip.supportedfiles.zipfile.ZipFile;
 
+/**
+ * Tests for the processing of archives breaking several torrentzip rules at
+ * once, from the pure check report up to the full rebuild.
+ */
+@DisplayName("Tests for the torrentzip processing")
 class TorrentZipProcessTest {
 
     @TempDir
     Path tempDir;
 
+    /** Check only mode reports every violated rule without modifying the archive. */
+    @DisplayName("check only reports every rule violation without repairing")
     @Test
     void checkOnlyReportsEveryRuleViolationWithoutRepairing() throws Exception {
         final var zip = tempDir.resolve("multi-problem.zip");
@@ -42,6 +50,8 @@ class TorrentZipProcessTest {
         assertArrayEquals(before, Files.readAllBytes(zip), "check only must not modify the file");
     }
 
+    /** A verbose conversion logs one message per violated rule plus the rebuild step. */
+    @DisplayName("verbose conversion logs every rule")
     @Test
     void verboseConversionLogsEveryRule() throws Exception {
         final var zip = tempDir.resolve("multi-problem.zip");
@@ -59,6 +69,8 @@ class TorrentZipProcessTest {
         assertTrue(logCallback.logs().contains(Messages.getString("TorrentZip.TorrentZipping")));
     }
 
+    /** The rebuilt multi problem archive reopens as a valid torrentzip without the removed entries. */
+    @DisplayName("the converted multi problem zip reopens as valid torrentzip")
     @Test
     void convertedMultiProblemZipReopensAsValidTzip() throws Exception {
         final var zip = tempDir.resolve("multi-problem.zip");
@@ -80,6 +92,8 @@ class TorrentZipProcessTest {
         }
     }
 
+    /** Conflicting duplicates mark the archive corrupt, skip the rebuild and leave no tmp file. */
+    @DisplayName("conflicting duplicates skip the rebuild")
     @Test
     void conflictingDuplicatesMarkCorruptAndSkipRebuild() throws Exception {
         final var zip = tempDir.resolve("conflict.zip");
@@ -103,6 +117,8 @@ class TorrentZipProcessTest {
         }
     }
 
+    /** Identical duplicates collapse into one entry of the rebuilt archive. */
+    @DisplayName("identical duplicates collapse into one entry")
     @Test
     void identifyingDuplicatesAreCollapsedIntoOneByTheRebuild() throws Exception {
         final var zip = tempDir.resolve("identical-dup.zip");
@@ -126,6 +142,8 @@ class TorrentZipProcessTest {
         }
     }
 
+    /** An entry with the 4 GiB sentinel size makes the whole archive read and write the zip64 structures. */
+    @DisplayName("a huge declared size writes the zip64 structures for the whole archive")
     @Test
     void anEntryDeclaringAHugeSizeWritesZip64StructuresForTheWholeZipFile() throws Exception {
         final var zip = tempDir.resolve("declared-huge.zip");
@@ -148,6 +166,7 @@ class TorrentZipProcessTest {
         }
     }
 
+    /** Tells if the data contains the given four byte signature. */
     private static boolean containsSignature(final byte[] data, final byte[] signature) {
         for (var i = 0; i <= data.length - signature.length; i++) {
             var match = true;
@@ -163,6 +182,7 @@ class TorrentZipProcessTest {
         return false;
     }
 
+    /** Writes a zip breaking rule 1 to 4: backslash separator, unsorted names, an unneeded directory marker and an identical duplicate. */
     private static void writeMultiProblemZip(final File zip) throws IOException {
         // a zip breaking rule 1 (backslash separator), rule 2 (unsorted), rule 3
         // (unneeded directory marker after sorting) and rule 4 (identical duplicate)

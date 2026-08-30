@@ -23,16 +23,31 @@ import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import jtrrntzip.supportedfiles.zipfile.ZipFile;
 
+/**
+ * Golden corpus tests over the reference torrentzip archives of
+ * {@code src/test/resources}.
+ *
+ * <p>The corpus files are pre-built valid torrentzips created by reference
+ * implementations. The tests verify that this project opens every archive
+ * without errors, detects it as a valid torrentzip, keeps the reading order
+ * stable under the reference comparator and reproduces the same entry
+ * structure and comment after a full extraction, plain re-zip and conversion
+ * round trip.</p>
+ */
+@DisplayName("Golden corpus tests for reading and rebuilding torrentzips")
 class TorrentZipFileTest {
 
+    /** Enables the central directory dumps with -Djtrrntzip.test.dump=true. */
     private static final boolean DUMP_ENABLED = Boolean.getBoolean("jtrrntzip.test.dump");
 
+    /** The persistent output folder of the central directory dumps. */
     private static final Path DUMP_ROOT = Path.of("build", "dump");
 
     @TempDir
@@ -56,10 +71,13 @@ class TorrentZipFileTest {
             "sample-4.zip",
             "sample-5.zip");
 
+    /** Returns the resource names of the golden corpus archives. */
     static List<String> torrentZipResources() {
         return TORRENT_ZIP_RESOURCES;
     }
 
+    /** Every corpus archive opens without structural errors. */
+    @DisplayName("opens every corpus archive without errors")
     @ParameterizedTest
     @MethodSource("torrentZipResources")
     void testZipFileOpensAsZipGood(String resourceName) throws IOException, URISyntaxException {
@@ -68,12 +86,14 @@ class TorrentZipFileTest {
         File zipFile = new File(resourceUrl.toURI());
         assertTrue(zipFile.exists(), "Zip file does not exist: " + zipFile);
 
-        try (ZipFile zf = new ZipFile()) { // note: ZipFile implements ICompress but no AutoCloseable? check
+        try (ZipFile zf = new ZipFile()) {
             ZipReturn zr = zf.zipFileOpen(zipFile, zipFile.lastModified(), true);
             assertEquals(ZipReturn.ZIPGOOD, zr, "Expected ZIPGOOD for " + resourceName + " but got " + zr + " (" + ZipFile.zipErrorMessageText(zr) + ")");
         }
     }
 
+    /** Every corpus archive is detected as a fully valid torrentzip. */
+    @DisplayName("detects every corpus archive as a valid torrentzip")
     @ParameterizedTest
     @MethodSource("torrentZipResources")
     void testOpensAsValidTorrentZip(String resourceName) throws IOException, URISyntaxException {
@@ -88,6 +108,8 @@ class TorrentZipFileTest {
         assertTrue(status.contains(TrrntZipStatus.VALIDTRRNTZIP), "Expected VALIDTRRNTZIP for " + resourceName + " but got " + status);
     }
 
+    /** The entry order of every corpus archive ascends by the reference compare. */
+    @DisplayName("the corpus entry order is stable under the reference comparator")
     @ParameterizedTest
     @MethodSource("torrentZipResources")
     void testGoldenCorpusOrderIsStableUnderReferenceComparator(String resourceName) throws IOException, URISyntaxException {
@@ -109,6 +131,8 @@ class TorrentZipFileTest {
         }
     }
 
+    /** A full extract, plain re-zip and conversion round trip reproduces the corpus structure and comment. */
+    @DisplayName("a round trip through a plain zip reproduces the torrentzip")
     @ParameterizedTest
     @MethodSource("torrentZipResources")
     void testUncompressRecompressToPlainThenToTzipAndCompare(String resourceName) throws Exception {
@@ -152,6 +176,7 @@ class TorrentZipFileTest {
         assertTzipFilesEquivalent(originalTzip, producedTzip);
     }
 
+    /** Extracts every entry of the archive into the target directory. */
     private void extractZipToDir(File zipFile, Path targetDir) throws IOException {
         Files.createDirectories(targetDir);
 
@@ -199,6 +224,7 @@ class TorrentZipFileTest {
         }
     }
 
+    /** Writes the directory contents into a deliberately unsorted plain deflated zip. */
     private void createPlainZip(Path srcDir, File outZip) throws IOException {
         Files.createDirectories(outZip.getParentFile().toPath());
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(outZip.toPath()))) {
@@ -236,6 +262,7 @@ class TorrentZipFileTest {
         }
     }
 
+    /** Compares entry names, CRCs, sizes, torrentzip states and file comments of the two archives. */
     private void assertTzipFilesEquivalent(File expected, File actual) throws IOException {
         // compare structure (logical files), comment etc. Note: container size/bytes may legitimately
         // differ if the checked-in tzip was produced by a different trrntzip impl (different deflate output
@@ -267,6 +294,7 @@ class TorrentZipFileTest {
         }
     }
 
+    /** Parses and returns the file comment by scanning back for the EOCD signature. */
     private String readZipFileComment(File f) throws IOException {
         byte[] data = Files.readAllBytes(f.toPath());
         // EOCD signature search from near end (handles small comment)
@@ -283,6 +311,7 @@ class TorrentZipFileTest {
     }
 
     // === Central Directory Dump for debugging, disabled unless -Djtrrntzip.test.dump=true ===
+    /** Writes the central directory dumps of both archives when dumping is enabled. */
     private void dumpCentralDirectoryComparison(File orig, File produced, String base) throws IOException {
         if (!DUMP_ENABLED)
             return;
@@ -337,6 +366,7 @@ class TorrentZipFileTest {
         System.out.println("Dumps written to: " + dumpRoot);
     }
 
+    /** Extracts the central directory bytes of the archive. */
     private byte[] extractCentralDirBytes(File f) throws IOException {
         byte[] data = Files.readAllBytes(f.toPath());
         int start = Math.max(0, data.length - 65535 - 22);
@@ -356,6 +386,7 @@ class TorrentZipFileTest {
         return new byte[0];
     }
 
+    /** Writes a human readable dump of the parsed central directory records. */
     private void dumpParsedCentralDir(byte[] cd, Path out, String label) throws IOException {
         StringBuilder sb = new StringBuilder();
         sb.append("=== " + label + " Central Directory ===\n");
@@ -423,19 +454,23 @@ class TorrentZipFileTest {
         Files.writeString(out, sb.toString());
     }
 
+    /** Reads a little endian unsigned short. */
     private int readUShortLE(byte[] b, int off) {
         return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8);
     }
 
+    /** Reads a little endian unsigned 32-bit value. */
     private long readUIntLE(byte[] b, int off) {
         return (b[off] & 0xFFL) | ((b[off + 1] & 0xFFL) << 8) |
                 ((b[off + 2] & 0xFFL) << 16) | ((b[off + 3] & 0xFFL) << 24);
     }
 
+    /** Reads a little endian signed int. */
     private int readIntLE(byte[] b, int off) {
         return (int) readUIntLE(b, off);
     }
 
+    /** Formats the bytes as upper case hex. */
     private String bytesToHex(byte[] b) {
         StringBuilder sb = new StringBuilder();
         for (byte v : b)
@@ -443,12 +478,14 @@ class TorrentZipFileTest {
         return sb.toString();
     }
 
+    /** Computes the CRC-32 of the data. */
     private long crc32(byte[] data) {
         java.util.zip.CRC32 crc = new java.util.zip.CRC32();
         crc.update(data);
         return crc.getValue();
     }
 
+    /** Writes a structured JSON dump of the central directory records. */
     private void dumpCentralDirAsJson(byte[] cd, Path out) throws IOException {
         StringBuilder sb = new StringBuilder();
         sb.append("[\n");
@@ -524,6 +561,7 @@ class TorrentZipFileTest {
         Files.writeString(out, sb.toString());
     }
 
+    /** Escapes the string for embedding into the JSON dump. */
     private String escapeJson(String s) {
         if (s == null)
             return "";

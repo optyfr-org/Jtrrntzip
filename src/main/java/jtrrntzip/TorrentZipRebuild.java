@@ -22,6 +22,18 @@ import org.apache.commons.io.FilenameUtils;
 import jtrrntzip.supportedfiles.ICompress;
 import jtrrntzip.supportedfiles.zipfile.ZipFile;
 
+/**
+ * Rebuilds a zip archive into the torrentzip format by copying its entries
+ * into a newly created archive.
+ *
+ * <p>The entries are streamed one by one from the source archive into a
+ * sibling file with the extension {@code .tmp}, deflated at the maximum
+ * level with the fixed torrentzip timestamp. Only when every entry has been
+ * copied and verified is the temporary archive closed and moved onto the
+ * original name. Any failure closes the source, discards the temporary file
+ * and reports the archive as corrupt, so the original file is never left in a
+ * half-written state.</p>
+ */
 public final class TorrentZipRebuild {
     private TorrentZipRebuild() {
         throw new IllegalStateException("Utility class");
@@ -29,6 +41,24 @@ public final class TorrentZipRebuild {
 
     private static final Logger LOGGER = Logger.getLogger(TorrentZipRebuild.class.getName());
 
+    /**
+     * Rebuilds the archive of the given source into the torrentzip format.
+     *
+     * <p>The source archive is closed before returning, both on success and
+     * on failure.</p>
+     *
+     * @param zippedFiles
+     *            the archive entries to copy, already in their final
+     *            torrentzip order
+     * @param originalZipFile
+     *            the archive to read the entry data from
+     * @param buffer
+     *            the scratch buffer used for the entry copy operations
+     * @param logCallback
+     *            receives the progress and optional log output
+     * @return {@link TrrntZipStatus#VALIDTRRNTZIP} when the rebuild succeeded,
+     *         otherwise {@link TrrntZipStatus#CORRUPTZIP}
+     */
     public static final Set<TrrntZipStatus> reZipFiles(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final byte[] buffer, final LogCallback logCallback) {
         if (originalZipFile == null)
             throw new IllegalArgumentException("original zip file is <null>");
@@ -46,6 +76,28 @@ public final class TorrentZipRebuild {
         }
     }
 
+    /**
+     * Runs the rebuild against the resolved file names.
+     *
+     * @param zippedFiles
+     *            the entries to copy, in their final order
+     * @param originalZipFile
+     *            the source archive to read from and close
+     * @param buffer
+     *            the scratch buffer for the copy operations
+     * @param logCallback
+     *            receives progress and optional log output
+     * @param filename
+     *            the original archive path
+     * @param tmpFilename
+     *            the temporary build path
+     * @param outfilename
+     *            the final output path, different from the original when its
+     *            extension is not {@code .zip}
+     * @return the rebuild result
+     * @throws IOException
+     *             when any step of the rebuild fails
+     */
     private static Set<TrrntZipStatus> reZipFiles(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final byte[] buffer, final LogCallback logCallback,
             final Path filename, final Path tmpFilename, final Path outfilename) throws IOException {
         Files.deleteIfExists(tmpFilename);
@@ -65,6 +117,24 @@ public final class TorrentZipRebuild {
         }
     }
 
+    /**
+     * Copies every entry from the source archive into the new archive and
+     * reports progress per entry.
+     *
+     * @param zippedFiles
+     *            the entries to copy
+     * @param originalZipFile
+     *            the source archive
+     * @param zipFileOut
+     *            the archive being written
+     * @param buffer
+     *            the scratch buffer for the copy operations
+     * @param logCallback
+     *            receives progress and optional log output
+     * @return {@code true} when all entries were copied successfully
+     * @throws IOException
+     *             when reading or writing the archives fails
+     */
     private static boolean copyAllEntries(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final ICompress zipFileOut, final byte[] buffer,
             final LogCallback logCallback) throws IOException {
         for (var i = 0; i < zippedFiles.size(); i++) {
@@ -78,6 +148,24 @@ public final class TorrentZipRebuild {
         return true;
     }
 
+    /**
+     * Copies a single entry from the source archive into the new archive.
+     *
+     * <p>The entry data is inflated, verified against the expected CRC-32 of
+     * the central directory, and written deflated into the new archive.</p>
+     *
+     * @param t
+     *            the entry to copy
+     * @param originalZipFile
+     *            the source archive
+     * @param zipFileOut
+     *            the archive being written
+     * @param buffer
+     *            the scratch buffer for the copy operation
+     * @return {@code true} when the entry was copied successfully
+     * @throws IOException
+     *             when reading or writing the entry fails
+     */
     private static boolean copyEntry(final ZippedFile t, final ICompress originalZipFile, final ICompress zipFileOut, final byte[] buffer) throws IOException {
         if (!(originalZipFile instanceof ZipFile ozf))
             return false;
@@ -109,6 +197,24 @@ public final class TorrentZipRebuild {
         return true;
     }
 
+    /**
+     * Finalizes a successful rebuild: closes both archives, removes the
+     * original when the output name changes, and moves the temporary archive
+     * onto the output name.
+     *
+     * @param zipFileOut
+     *            the finished temporary archive
+     * @param originalZipFile
+     *            the source archive
+     * @param filename
+     *            the original archive path
+     * @param tmpFilename
+     *            the temporary build path
+     * @param outfilename
+     *            the final output path
+     * @throws IOException
+     *             when closing or moving the archives fails
+     */
     private static void finishRebuild(final ICompress zipFileOut, final ICompress originalZipFile, final Path filename, final Path tmpFilename, final Path outfilename)
             throws IOException {
         zipFileOut.zipFileClose();
@@ -120,6 +226,15 @@ public final class TorrentZipRebuild {
         Files.delete(tmpFilename);
     }
 
+    /**
+     * Aborts the output archive after a failed rebuild and leaves its
+     * temporary file for deletion by the caller.
+     *
+     * @param zipFileOut
+     *            the output archive, may be closed already
+     * @param tmpFilename
+     *            the temporary build path, used for logging only
+     */
     private static void abortOutputIfOpen(final ICompress zipFileOut, final Path tmpFilename) {
         if (zipFileOut.zipOpen() == ZipOpenType.CLOSED)
             return;
@@ -130,6 +245,12 @@ public final class TorrentZipRebuild {
         }
     }
 
+    /**
+     * Deletes the given path, ignoring any failure.
+     *
+     * @param tmpFilename
+     *            the path to delete
+     */
     private static void deleteQuietly(final Path tmpFilename) {
         try {
             Files.deleteIfExists(tmpFilename);
@@ -138,6 +259,22 @@ public final class TorrentZipRebuild {
         }
     }
 
+    /**
+     * Copies exactly {@code size} bytes from the input to the output stream.
+     *
+     * @param in
+     *            the stream to read from
+     * @param out
+     *            the stream to write to
+     * @param size
+     *            the exact number of bytes to transfer
+     * @param buffer
+     *            the scratch buffer used for the transfer
+     * @return {@code true} when exactly {@code size} bytes were copied,
+     *         {@code false} when the input ended early
+     * @throws IOException
+     *             when reading or writing fails
+     */
     static boolean copyFully(final InputStream in, final OutputStream out, final long size, final byte[] buffer) throws IOException {
         var total = 0L;
         while (total < size) {
@@ -151,6 +288,12 @@ public final class TorrentZipRebuild {
         return true;
     }
 
+    /**
+     * Closes the given archive, ignoring any failure.
+     *
+     * @param zipFile
+     *            the archive to close
+     */
     private static void closeQuietly(final ICompress zipFile) {
         try {
             zipFile.zipFileClose();

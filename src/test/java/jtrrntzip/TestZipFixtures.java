@@ -17,21 +17,35 @@ import java.util.zip.ZipOutputStream;
 
 import jtrrntzip.supportedfiles.zipfile.ZipFile;
 
+/**
+ * Builders and byte level helpers shared by the test classes.
+ *
+ * <p>The builders create zip archives either through the JDK
+ * {@link java.util.zip.ZipOutputStream} or through this project's own writer,
+ * which is needed for archives that violate the torrentzip rules on purpose.
+ * The byte level helpers locate the structures of a written archive and
+ * corrupt them in controlled ways, for example a flipped entry CRC or a
+ * lower cased torrentzip file comment.</p>
+ */
 final class TestZipFixtures {
 
+    /** Utility class, do not instantiate. */
     private TestZipFixtures() {
     }
 
+    /** Encodes the CRC-32 as the four little endian bytes used by the archive structures. */
     static byte[] leCrc(final long crc) {
         return ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt((int) crc).array();
     }
 
+    /** Computes the CRC-32 of the content as four little endian bytes. */
     static byte[] crcOf(final byte[] content) {
         final var crc = new CRC32();
         crc.update(content);
         return leCrc(crc.getValue());
     }
 
+    /** Writes the entries as a stored, unsorted zip through the JDK writer. */
     static void writeStoredZip(final File out, final Map<String, byte[]> entries) throws IOException {
         try (var zos = new ZipOutputStream(new FileOutputStream(out))) {
             zos.setMethod(ZipOutputStream.STORED);
@@ -48,12 +62,14 @@ final class TestZipFixtures {
         }
     }
 
+    /** Computes the numeric CRC-32 of the content. */
     static long crcByte(final byte[] content) {
         final var crc = new CRC32();
         crc.update(content);
         return crc.getValue();
     }
 
+    /** Writes empty entries through the project writer, so the result follows the torrentzip layout. */
     static void writeZipWithOwnWriter(final File out, final List<String> sortedNames) throws IOException {
         try (final var zf = new ZipFile()) {
             if (zf.zipFileCreate(out) != ZipReturn.ZIPGOOD)
@@ -65,10 +81,12 @@ final class TestZipFixtures {
         }
     }
 
+    /** Writes one entry with its true content size through the project writer. */
     static void writeOwnEntry(final ZipFile zf, final String name, final byte[] content) throws IOException {
         writeOwnEntryWithDeclaredSize(zf, name, content.length, content);
     }
 
+    /** Writes one entry declaring any uncompressed size, used to exercise the zip64 paths. */
     static void writeOwnEntryWithDeclaredSize(final ZipFile zf, final String name, final long declaredSize, final byte[] content) throws IOException {
         final var opened = zf.zipFileOpenWriteStream(false, true, name, declaredSize, (short) 8);
         if (opened.status() != ZipReturn.ZIPGOOD)
@@ -82,6 +100,7 @@ final class TestZipFixtures {
             throw new IOException("failed to close write stream for " + name);
     }
 
+    /** A verbose {@link LogCallback} that records every log line for assertions. */
     static final class RecordingLogCallback implements LogCallback {
         private final List<String> logs = new java.util.ArrayList<>();
 
@@ -100,11 +119,13 @@ final class TestZipFixtures {
             return true;
         }
 
+        /** Returns the recorded log lines. */
         List<String> logs() {
             return logs;
         }
     }
 
+    /** Locates the end of central directory signature within the scan window of a real reader. */
     static int findEocd(final byte[] data) {
         final var start = Math.max(0, data.length - 22 - 65535);
         for (var i = data.length - 22; i >= start; i--) {
@@ -114,14 +135,17 @@ final class TestZipFixtures {
         return -1;
     }
 
+    /** Reads a little endian unsigned short. */
     static int readUShortLE(final byte[] b, final int off) {
         return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8);
     }
 
+    /** Reads a little endian unsigned 32-bit value. */
     static long readUIntLE(final byte[] b, final int off) {
         return (b[off] & 0xFFL) | ((b[off + 1] & 0xFFL) << 8) | ((b[off + 2] & 0xFFL) << 16) | ((b[off + 3] & 0xFFL) << 24);
     }
 
+    /** Flips one CRC bit in the first central directory record and its matching local file header. */
     static void corruptFirstEntryCrcs(final Path file) throws IOException {
         final var data = java.nio.file.Files.readAllBytes(file);
         final var eocd = findEocd(data);
@@ -139,6 +163,7 @@ final class TestZipFixtures {
         java.nio.file.Files.write(file, data);
     }
 
+    /** Lower cases the TORRENTZIPPED file comment so the checksum no longer matches. */
     static void lowerCaseTorrentZipComment(final Path file) throws IOException {
         final var data = java.nio.file.Files.readAllBytes(file);
         final var eocd = findEocd(data);
@@ -153,6 +178,7 @@ final class TestZipFixtures {
         java.nio.file.Files.write(file, data);
     }
 
+    /** Extracts the raw stored data of the first entry of a single entry zip. */
     static byte[] extractStoredEntry(final Path file) throws IOException {
         // extract the first entry assuming a stored single entry zip built by writeStoredZip
         final var data = java.nio.file.Files.readAllBytes(file);
@@ -170,6 +196,7 @@ final class TestZipFixtures {
         return Arrays.copyOfRange(data, pos, pos + size);
     }
 
+    /** Writes the entries as a deflated zip with a zero timestamp through the JDK writer. */
     static void storeZip(final Path target, final Map<String, String> entries) throws IOException {
         try (var zos = new ZipOutputStream(new FileOutputStream(target.toFile()))) {
             zos.setMethod(ZipOutputStream.DEFLATED);

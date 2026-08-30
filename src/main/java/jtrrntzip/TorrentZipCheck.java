@@ -5,13 +5,46 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-public class TorrentZipCheck {
+/**
+ * Validation of the entries of an archive against the torrentzip rules, plus
+ * repair of the fixable violations in memory.
+ *
+ * <p>The four torrentzip rules checked here are:</p>
+ * <ol>
+ * <li>entry names use {@code /} as the directory separator,</li>
+ * <li>entry names are sorted with a lower case ASCII compare,</li>
+ * <li>directory marker entries only exist for empty directories,</li>
+ * <li>entries are unique.</li>
+ * </ol>
+ * <p>Most violations are only a matter of representation, so the corrections
+ * are applied directly to the passed entry list and a matching
+ * {@link TrrntZipStatus} is returned to request a rebuild. Identical duplicate
+ * entries are dropped here as well. Conflicting duplicates, entries with the
+ * same name but differing content, cannot be repaired: they add
+ * {@link TrrntZipStatus#CORRUPTZIP} so the caller skips the rebuild.</p>
+ */
+public final class TorrentZipCheck {
     private TorrentZipCheck() {
         throw new IllegalStateException("Utility class");
     }
 
+    /**
+     * The sort order of the torrentzip format, see
+     * {@link #trrntZipStringCompare(String, String)}.
+     */
     private static final Comparator<ZippedFile> TRRNT_ZIP_NAME_ORDER = Comparator.comparing(ZippedFile::name, TorrentZipCheck::trrntZipStringCompare);
 
+    /**
+     * Checks the entries of an archive against the torrentzip rules and
+     * repairs the fixable violations directly in the list.
+     *
+     * @param zippedFiles
+     *            the archive entries, may be reordered and pruned by the
+     *            checks
+     * @param statusLogCallBack
+     *            receives verbose messages about the violations found
+     * @return the rule violations found, empty when every rule is satisfied
+     */
     public static Set<TrrntZipStatus> checkZipFiles(final List<ZippedFile> zippedFiles, final LogCallback statusLogCallBack) {
         final EnumSet<TrrntZipStatus> tzStatus = EnumSet.noneOf(TrrntZipStatus.class);
         fixBackslashSeparators(zippedFiles, tzStatus, statusLogCallBack);
@@ -114,12 +147,42 @@ public class TorrentZipCheck {
         }
     }
 
+    /**
+     * Tells if the given directory marker entry is unneeded because the
+     * archive also contains an entry in that directory.
+     *
+     * <p>The check relies on the list being in torrentzip sort order: a
+     * marker entry is unnecessary exactly when the entry following it lives
+     * inside the marked directory.</p>
+     *
+     * @param directoryEntry
+     *            the name of the directory marker entry, expected to end in a
+     *            slash
+     * @param nextEntry
+     *            the name of the entry following the marker in sort order
+     * @return {@code true} when the marker entry is not needed
+     */
     public static boolean isUnnecessaryDirectoryEntry(final String directoryEntry, final String nextEntry) {
         return directoryEntry.charAt(directoryEntry.length() - 1) == '/' && nextEntry.length() > directoryEntry.length()
                 && trrntZipStringCompare(directoryEntry, nextEntry.substring(0, directoryEntry.length())) == 0;
     }
 
-    // perform an ascii based lower case string file compare
+    /**
+     * Compares two entry names the way the torrentzip format requires.
+     *
+     * <p>The comparison walks both names character by character and folds
+     * ASCII upper case letters to lower case before comparing; characters
+     * outside of ASCII compare by their raw character value, so this is an
+     * ASCII fold and intentionally not a full Unicode case folding. When one
+     * name is a prefix of the other, the shorter name sorts first.</p>
+     *
+     * @param string1
+     *            the first name
+     * @param string2
+     *            the second name
+     * @return a negative number, zero or a positive number as the first name
+     *         sorts before, equal to or after the second name
+     */
     public static int trrntZipStringCompare(final String string1, final String string2) {
         final char[] bytes1 = string1.toCharArray();
         final char[] bytes2 = string2.toCharArray();
