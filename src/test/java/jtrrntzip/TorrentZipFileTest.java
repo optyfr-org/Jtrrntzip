@@ -7,9 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.math.BigInteger;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.Charset;
@@ -21,8 +19,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -162,30 +158,15 @@ class TorrentZipFileTest {
     private void extractZipToDir(File zipFile, Path targetDir) throws IOException {
         Files.createDirectories(targetDir);
 
-        // First, get the count using a probe (full open succeeds for these files)
-        int count;
-        jtrrntzip.supportedfiles.zipfile.ZipFile probe = new jtrrntzip.supportedfiles.zipfile.ZipFile();
+        final var zf = new ZipFile();
         try {
-            ZipReturn openRet = probe.zipFileOpen(zipFile, zipFile.lastModified(), true);
+            ZipReturn openRet = zf.zipFileOpen(zipFile, zipFile.lastModified(), true);
             if (openRet != ZipReturn.ZIPGOOD) {
                 throw new IOException("Failed to open zip for extract: " + openRet + " for " + zipFile);
             }
-            count = probe.localFilesCount();
-        } finally {
-            try { probe.zipFileClose(); probe.close(); } catch (Exception _) { /* ignore */}
-        }
 
-        // Extract each entry using a *fresh* ZipFile instance per entry.
-        // This avoids side effects from ZipFileOpenReadStreamQuick (which clears localFiles).
-        // We use the normal openReadStream after each fresh open.
-        for (int i = 0; i < count; i++) {
-            jtrrntzip.supportedfiles.zipfile.ZipFile zf = new jtrrntzip.supportedfiles.zipfile.ZipFile();
-            try {
-                ZipReturn openRet = zf.zipFileOpen(zipFile, zipFile.lastModified(), true);
-                if (openRet != ZipReturn.ZIPGOOD) {
-                    throw new IOException("Failed to open zip for extract entry " + i + ": " + openRet);
-                }
-
+            final int count = zf.localFilesCount();
+            for (int i = 0; i < count; i++) {
                 String name = zf.filename(i).replace('\\', '/');
                 Path outPath = targetDir.resolve(name);
 
@@ -196,23 +177,17 @@ class TorrentZipFileTest {
 
                 Files.createDirectories(outPath.getParent());
 
-                AtomicReference<InputStream> readStream = new AtomicReference<>();
-                AtomicReference<BigInteger> streamSize = new AtomicReference<>();
-                AtomicInteger compMethod = new AtomicInteger();
-
-                ZipReturn zr = zf.zipFileOpenReadStream(i, false, readStream, streamSize, compMethod);
-                if (zr != ZipReturn.ZIPGOOD || readStream.get() == null) {
-                    throw new IOException("Failed to open read stream for " + name + " (i=" + i + "): " + zr);
+                final var opened = zf.zipFileOpenReadStream(i, false);
+                if (opened.status() != ZipReturn.ZIPGOOD || opened.stream() == null) {
+                    throw new IOException("Failed to open read stream for " + name + " (i=" + i + "): " + opened.status());
                 }
 
-                BigInteger usize = streamSize.get();
-                try (InputStream in = readStream.get();
-                     OutputStream out = Files.newOutputStream(outPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                    long togo = usize.longValue();
+                try (OutputStream out = Files.newOutputStream(outPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                    long togo = opened.size();
                     byte[] buf = new byte[8192];
                     while (togo > 0) {
                         int len = (int) Math.min(buf.length, togo);
-                        int n = in.read(buf, 0, len);
+                        int n = opened.stream().read(buf, 0, len);
                         if (n < 0) break;
                         out.write(buf, 0, n);
                         togo -= n;
@@ -220,9 +195,9 @@ class TorrentZipFileTest {
                 } finally {
                     try { zf.zipFileCloseReadStream(); } catch (Exception _) { /* ignore */ }
                 }
-            } finally {
-                try { zf.zipFileClose(); zf.close(); } catch (Exception _) { /* ignore */ }
             }
+        } finally {
+            try { zf.zipFileClose(); zf.close(); } catch (Exception _) { /* ignore */ }
         }
     }
 

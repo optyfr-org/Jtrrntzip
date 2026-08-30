@@ -4,7 +4,6 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
@@ -73,8 +72,8 @@ public final class EnhancedSeekableByteChannel implements SeekableByteChannel {
         return this;
     }
 
-    public final EnhancedSeekableByteChannel putULong(final BigInteger l) throws IOException {
-        return putLong(UnsignedTypes.fromULong(l));
+    public final EnhancedSeekableByteChannel putULong(final long l) throws IOException {
+        return putLong(l);
     }
 
     public final EnhancedSeekableByteChannel putInt(final int i) throws IOException {
@@ -138,8 +137,8 @@ public final class EnhancedSeekableByteChannel implements SeekableByteChannel {
         return lbb.getLong();
     }
 
-    public final BigInteger getULong() throws IOException {
-        return UnsignedTypes.toULong(getLong());
+    public final long getULong() throws IOException {
+        return getLong();
     }
 
     public final int getInt() throws IOException {

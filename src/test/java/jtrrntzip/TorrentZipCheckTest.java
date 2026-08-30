@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -94,11 +94,83 @@ class TorrentZipCheckTest {
         assertTrue(status.contains(TrrntZipStatus.CORRUPTZIP));
     }
 
+    @Test
+    void unsortedInputIsSortedExactlyLikeTheSharedComparator() {
+        final var names = List.of("m.txt", "B.txt", "a.txt", "zz.dat", "b.dat", "Q", "q2", "ac", "ab");
+        final List<ZippedFile> zippedFiles = new ArrayList<>();
+        for (final var name : names)
+            zippedFiles.add(zippedFile(name, 1, 1));
+
+        final var expected = new ArrayList<>(zippedFiles);
+        expected.sort(Comparator.comparing(ZippedFile::getName, TorrentZipCheck::trrntZipStringCompare));
+
+        final var status = TorrentZipCheck.checkZipFiles(zippedFiles, new DummyLogCallback());
+
+        assertTrue(status.contains(TrrntZipStatus.UNSORTED), "unsorted input must be flagged");
+        assertEquals(expected.size(), zippedFiles.size());
+        for (var i = 0; i < expected.size(); i++)
+            assertEquals(expected.get(i).getName(), zippedFiles.get(i).getName(),
+                    "order must match the shared comparator at index " + i);
+    }
+
+    @Test
+    void alreadySortedInputKeepsItsOrderWithoutUnsortedFlag() {
+        final var names = List.of("a.txt", "B.txt", "b.txt", "z.txt");
+        final List<ZippedFile> zippedFiles = new ArrayList<>();
+        for (final var name : names)
+            zippedFiles.add(zippedFile(name, 1, 1));
+
+        final var status = TorrentZipCheck.checkZipFiles(zippedFiles, new DummyLogCallback());
+
+        assertFalse(status.contains(TrrntZipStatus.UNSORTED), "sorted input must not be flagged");
+        assertEquals(names.size(), zippedFiles.size());
+        for (var i = 0; i < names.size(); i++)
+            assertEquals(names.get(i), zippedFiles.get(i).getName());
+    }
+
+    @Test
+    void foldEqualNamesKeepTheirRelativeOrder() {
+        final List<ZippedFile> zippedFiles = new ArrayList<>();
+        zippedFiles.add(zippedFile("AB", 1, 1));
+        zippedFiles.add(zippedFile("ab", 2, 1));
+        zippedFiles.add(zippedFile("c", 3, 1));
+
+        final var status = TorrentZipCheck.checkZipFiles(zippedFiles, new DummyLogCallback());
+
+        assertEquals("AB", zippedFiles.get(0).getName(), "fold-equal names must keep their original relative order");
+        assertEquals("ab", zippedFiles.get(1).getName());
+    }
+
+    @Test
+    void unnecessaryDirectoryEntryPredicateMatchesTheValidationRule() {
+        assertTrue(TorrentZipCheck.isUnnecessaryDirectoryEntry("dir/", "dir/file.txt"));
+        assertTrue(TorrentZipCheck.isUnnecessaryDirectoryEntry("DIR/", "dir/file.txt"),
+                "the marker matches its directory using the folded compare like the reopen check");
+        assertFalse(TorrentZipCheck.isUnnecessaryDirectoryEntry("dir/", "other/file.txt"));
+        assertFalse(TorrentZipCheck.isUnnecessaryDirectoryEntry("dir/", "dir"));
+        assertFalse(TorrentZipCheck.isUnnecessaryDirectoryEntry("file.txt", "file.txt/child"));
+    }
+
+    @Test
+    void checkZipFilesRemovesDirectoryMarkersExactlyLikeThePredicate() {
+        final List<ZippedFile> zippedFiles = new ArrayList<>();
+        zippedFiles.add(zippedFile("dir/", 0, 0));
+        zippedFiles.add(zippedFile("dir/file.txt", 1, 5));
+        zippedFiles.add(zippedFile("keep/", 0, 0));
+
+        final var status = TorrentZipCheck.checkZipFiles(zippedFiles, new DummyLogCallback());
+
+        assertTrue(status.contains(TrrntZipStatus.EXTRADIRECTORYENTRIES));
+        assertEquals(2, zippedFiles.size());
+        assertEquals("dir/file.txt", zippedFiles.get(0).getName());
+        assertEquals("keep/", zippedFiles.get(1).getName());
+    }
+
     private static ZippedFile zippedFile(final String name, final int crc, final long size) {
         final var zippedFile = new ZippedFile();
         zippedFile.setName(name);
         zippedFile.setCRC(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(crc).array());
-        zippedFile.setSize(BigInteger.valueOf(size));
+        zippedFile.setSize(size);
         return zippedFile;
     }
 }

@@ -1,6 +1,5 @@
 package jtrrntzip;
 
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -10,7 +9,7 @@ public class ZippedFile
 {
 	private int index;
 	private String name;
-	private BigInteger size;
+	private long size;
 	private int crc;
 
 	public final byte[] getLECRC()
@@ -51,7 +50,7 @@ public class ZippedFile
 	/**
 	 * @param size the size to set
 	 */
-	public void setSize(BigInteger size)
+	public void setSize(long size)
 	{
 		this.size = size;
 	}
@@ -75,7 +74,7 @@ public class ZippedFile
 	/**
 	 * @return the size
 	 */
-	public BigInteger getSize()
+	public long getSize()
 	{
 		return size;
 	}

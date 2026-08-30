@@ -5,15 +5,12 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.zip.CRC32;
@@ -97,26 +94,23 @@ public final class TorrentZipRebuild
 		if (!(originalZipFile instanceof ZipFile ozf))
 			return false;
 
-		final AtomicReference<InputStream> readStream = new AtomicReference<>();
-		final AtomicReference<BigInteger> streamSize = new AtomicReference<>();
-		final var zrInput = ozf.zipFileOpenReadStream(t.getIndex(), false, readStream, streamSize, new AtomicInteger());
-		if (zrInput != ZipReturn.ZIPGOOD)
+		final var read = ozf.zipFileOpenReadStream(t.getIndex(), false);
+		if (read.status() != ZipReturn.ZIPGOOD)
 			return false;
 
-		final AtomicReference<OutputStream> writeStream = new AtomicReference<>();
-		final var zrOutput = zipFileOut.zipFileOpenWriteStream(false, true, t.getName(), streamSize.get(), (short) 8, writeStream);
-		if (zrOutput != ZipReturn.ZIPGOOD)
+		final var write = zipFileOut.zipFileOpenWriteStream(false, true, t.getName(), read.size(), (short) 8);
+		if (write.status() != ZipReturn.ZIPGOOD)
 			return false;
 
-		final var crcCs = new CheckedInputStream(readStream.get(), new CRC32());
+		final var crcCs = new CheckedInputStream(read.stream(), new CRC32());
 		final var bcrcCs = new BufferedInputStream(crcCs, buffer.length);
-		final var bWriteStream = new BufferedOutputStream(writeStream.get(), buffer.length);
+		final var bWriteStream = new BufferedOutputStream(write.stream(), buffer.length);
 
-		if (!copyFully(bcrcCs, bWriteStream, streamSize.get().longValue(), buffer))
+		if (!copyFully(bcrcCs, bWriteStream, read.size(), buffer))
 			return false;
 
 		bWriteStream.flush();
-		if (writeStream.get() instanceof DeflaterOutputStream ws)
+		if (write.stream() instanceof DeflaterOutputStream ws)
 			ws.finish();
 
 		originalZipFile.zipFileCloseReadStream();

@@ -1,5 +1,6 @@
 package jtrrntzip;
 
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -10,6 +11,8 @@ public class TorrentZipCheck
 	{
 		throw new IllegalStateException("Utility class");
 	}
+
+	private static final Comparator<ZippedFile> TRRNT_ZIP_NAME_ORDER = Comparator.comparing(ZippedFile::getName, TorrentZipCheck::trrntZipStringCompare);
 
 	public static Set<TrrntZipStatus> checkZipFiles(final List<ZippedFile> zippedFiles, final LogCallback StatusLogCallBack)
 	{
@@ -46,30 +49,25 @@ public class TorrentZipCheck
 		// ***************************** RULE 2 *************************************
 		// All Files in a torrentzip should be sorted with a lower case file compare.
 		//
-		// if needed sort the files correctly, and return Unsorted if errors found.
-		var error2 = false;
-		var thisSortFound = true;
-		while(thisSortFound)
+		// a single detection pass decides if the list is unsorted, the actual
+		// ordering is then done in one O(n log n) sort instead of bubble passes.
+		// return Unsorted if errors found.
+		var unsorted = false;
+		for(var i = 0; i < zippedFiles.size() - 1; i++)
 		{
-			thisSortFound = false;
-			for(var i = 0; i < zippedFiles.size() - 1; i++)
+			if(trrntZipStringCompare(zippedFiles.get(i).getName(), zippedFiles.get(i + 1).getName()) > 0)
 			{
-				final int c = trrntZipStringCompare(zippedFiles.get(i).getName(), zippedFiles.get(i + 1).getName());
-				if(c > 0)
-				{
-					final var zf = zippedFiles.get(i);
-					zippedFiles.set(i, zippedFiles.get(i + 1));
-					zippedFiles.set(i + 1, zf);
-
-					tzStatus.add(TrrntZipStatus.UNSORTED);
-					thisSortFound = true;
-					if(!error2 && StatusLogCallBack.isVerboseLogging())
-					{
-						error2 = true;
-						StatusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.IncorrectFileOrderFound")); //$NON-NLS-1$
-					}
-
-				}
+				unsorted = true;
+				break;
+			}
+		}
+		if(unsorted)
+		{
+			zippedFiles.sort(TRRNT_ZIP_NAME_ORDER);
+			tzStatus.add(TrrntZipStatus.UNSORTED);
+			if(StatusLogCallBack.isVerboseLogging())
+			{
+				StatusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.IncorrectFileOrderFound")); //$NON-NLS-1$
 			}
 		}
 
@@ -85,40 +83,19 @@ public class TorrentZipCheck
 		var error3 = false;
 		for(var i = 0; i < zippedFiles.size() - 1; i++)
 		{
-			// check if this is a directory entry
-			if(zippedFiles.get(i).getName().charAt(zippedFiles.get(i).getName().length() - 1) != '/')
+			if(!isUnnecessaryDirectoryEntry(zippedFiles.get(i).getName(), zippedFiles.get(i + 1).getName()))
 				continue;
-
-			// check if the next filename is shorter or equal to this filename.
-			// if it is shorter or equal it cannot be a file in the directory.
-			if(zippedFiles.get(i + 1).getName().length() <= zippedFiles.get(i).getName().length())
-				continue;
-
-			// check if the directory part of the two file enteries match
-			// if they do we found an incorrect directory entry.
-			var delete = true;
-			for(var j = 0; j < zippedFiles.get(i).getName().length(); j++)
-			{
-				if(zippedFiles.get(i).getName().charAt(j) != zippedFiles.get(i + 1).getName().charAt(j))
-				{
-					delete = false;
-					break;
-				}
-			}
 
 			// we found an incorrect directory so remove it.
-			if(delete)
+			zippedFiles.remove(i);
+			tzStatus.add(TrrntZipStatus.EXTRADIRECTORYENTRIES);
+			if(!error3 && StatusLogCallBack.isVerboseLogging())
 			{
-				zippedFiles.remove(i);
-				tzStatus.add(TrrntZipStatus.EXTRADIRECTORYENTRIES);
-				if(!error3 && StatusLogCallBack.isVerboseLogging())
-				{
-					error3 = true;
-					StatusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.UnneededDirectoryRecordsFound")); //$NON-NLS-1$
-				}
-
-				i--;
+				error3 = true;
+				StatusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.UnneededDirectoryRecordsFound")); //$NON-NLS-1$
 			}
+
+			i--;
 		}
 
 		// ***************************** RULE 4 *************************************
@@ -140,7 +117,7 @@ public class TorrentZipCheck
 				StatusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.DuplicateFileEntriesFound")); //$NON-NLS-1$
 			}
 
-			if(a.getCrc() == b.getCrc() && a.getSize().equals(b.getSize()))
+			if(a.getCrc() == b.getCrc() && a.getSize() == b.getSize())
 			{
 				zippedFiles.remove(i + 1);
 				i--;
@@ -152,6 +129,11 @@ public class TorrentZipCheck
 		}
 
 		return tzStatus;
+	}
+
+	public static boolean isUnnecessaryDirectoryEntry(final String directoryEntry, final String nextEntry)
+	{
+		return directoryEntry.charAt(directoryEntry.length() - 1) == '/' && nextEntry.length() > directoryEntry.length() && trrntZipStringCompare(directoryEntry, nextEntry.substring(0, directoryEntry.length())) == 0;
 	}
 
 	// perform an ascii based lower case string file compare

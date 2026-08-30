@@ -2,9 +2,6 @@ package jtrrntzip.supportedfiles.zipfile;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.math.BigInteger;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -12,7 +9,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
@@ -32,7 +28,7 @@ public final class ZipFile implements ICompress
 	static final int LOCALFILEHEADERSIGNATURE = 0x04034b50;
 	private static final int ZIP64ENDOFCENTRALDIRECTORYLOCATOR = 0x07064b50;
 	private static final int ZIP64ENDOFCENTRALDIRSIGNATURE = 0x06064b50;
-	
+
 	private static final void createDirForFile(File sFilename)
 	{
 		final File parent = sFilename.getParentFile();
@@ -88,22 +84,22 @@ public final class ZipFile implements ICompress
 		return ret;
 	}
 
-	private BigInteger centerDirSize;
-	private BigInteger centerDirStart;
-	private BigInteger endOfCenterDir64;
+	private long centerDirSize;
+	private long centerDirStart;
+	private long endOfCenterDir64;
 
 	private EnhancedSeekableByteChannel esbc;
 	private byte[] fileComment;
 	private final List<LocalFile> localFiles = new ArrayList<>();
 
-	private BigInteger localFilesCount;
+	private long localFilesCount;
 	private EnumSet<ZipStatus> pZipStatus = EnumSet.noneOf(ZipStatus.class);
 
 	private int readIndex;
 	private boolean zip64;
 
 	private File zipFileInfo = null;
-	
+
 	private final AtomicReference<Deflater> deflater = new AtomicReference<>();
 	private final AtomicReference<Inflater> inflater = new AtomicReference<>();
 
@@ -135,13 +131,6 @@ public final class ZipFile implements ICompress
 		return localFiles.get(i).getCrc();
 	}
 
-	@Override
-	public final void deepScan()
-	{
-		for (LocalFile lfile : localFiles)
-			lfile.localFileCheck();
-	}
-
 	private final ZipReturn endOfCentralDirRead() throws IOException
 	{
 		final long thisSignature = esbc.getInt();
@@ -156,14 +145,14 @@ public final class ZipFile implements ICompress
 		if (tushort != 0)
 			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
 
-		localFilesCount = BigInteger.valueOf(esbc.getUShort()); // TotalNumberOfEnteriesDisk
+		localFilesCount = esbc.getUShort(); // TotalNumberOfEnteriesDisk
 
 		tushort = esbc.getUShort(); // TotalNumber of entries in the central directory
-		if (BigInteger.valueOf(tushort).compareTo(localFilesCount) != 0)
+		if (tushort != localFilesCount)
 			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
 
-		centerDirSize = BigInteger.valueOf(esbc.getUInt()); // SizeOfCenteralDir
-		centerDirStart = BigInteger.valueOf(esbc.getUInt()); // Offset
+		centerDirSize = esbc.getUInt(); // SizeOfCenteralDir
+		centerDirStart = esbc.getUInt(); // Offset
 
 		int zipFileCommentLength = esbc.getUShort();
 
@@ -185,8 +174,8 @@ public final class ZipFile implements ICompress
 		// the 0xffff sentinel written for larger counts resolves via the zip64 EOCD
 		esbc.putUShort((localFiles.size() > 0xffff ? 0xffff : localFiles.size())); // TotalNumberOfEnteriesDisk
 		esbc.putUShort((localFiles.size() > 0xffff ? 0xffff : localFiles.size())); // TotalNumber of entries in the central directory
-		esbc.putUInt((centerDirSize.compareTo(BigInteger.valueOf(0xffffffffL)) >= 0 ? 0xffffffffL : centerDirSize).longValue());
-		esbc.putUInt((centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) >= 0 ? 0xffffffffL : centerDirStart).longValue());
+		esbc.putUInt((centerDirSize >= 0xffffffffL ? 0xffffffffL : centerDirSize)); // SizeOfCenteralDir
+		esbc.putUInt((centerDirStart >= 0xffffffffL ? 0xffffffffL : centerDirStart)); // Offset
 		esbc.putUShort(fileComment.length);
 		esbc.put(fileComment, 0, fileComment.length);
 	}
@@ -248,19 +237,13 @@ public final class ZipFile implements ICompress
 	}
 
 	@Override
-	public final BigInteger localHeader(int i)
-	{
-		return ((localFiles.get(i).getGeneralPurposeBitFlag() & 8) == 0) ? localFiles.get(i).getRelativeOffsetOfLocalHeader() : null;
-	}
-
-	@Override
 	public final long timeStamp()
 	{
 		return zipFileInfo != null ? zipFileInfo.lastModified() : 0;
 	}
 
 	@Override
-	public final BigInteger uncompressedSize(int i)
+	public final long uncompressedSize(int i)
 	{
 		return localFiles.get(i).getUncompressedSize();
 	}
@@ -301,11 +284,11 @@ public final class ZipFile implements ICompress
 		final long thisSignature = esbc.getInt();
 		if (thisSignature != ZIP64ENDOFCENTRALDIRSIGNATURE)
 			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
-		
-		BigInteger tulong = esbc.getULong(); // Size of zip64 end of central directory record
-		if (tulong.compareTo(BigInteger.valueOf(44)) != 0)
+
+		long tulong = esbc.getULong(); // Size of zip64 end of central directory record
+		if (tulong != 44)
 			return ZipReturn.ZIP64ENDOFCENTRALDIRERROR;
-		
+
 		esbc.getShort(); // version made by
 
 		int tushort = esbc.getUShort(); // version needed to extract
@@ -323,7 +306,7 @@ public final class ZipFile implements ICompress
 		localFilesCount = esbc.getULong(); // total number of entries in the central directory on this disk
 
 		tulong = esbc.getULong(); // total number of entries in the central directory
-		if (tulong.compareTo(localFilesCount)!=0)
+		if (tulong != localFilesCount)
 			return ZipReturn.ZIP64ENDOFCENTRALDIRERROR;
 
 		centerDirSize = esbc.getULong(); // size of central directory
@@ -336,21 +319,15 @@ public final class ZipFile implements ICompress
 	private final void zip64EndOfCentralDirWrite() throws IOException
 	{
 		esbc.putInt(ZIP64ENDOFCENTRALDIRSIGNATURE);
-		esbc.putULong(BigInteger.valueOf(44L)); // Size of zip64 end of central directory record
+		esbc.putULong(44L); // Size of zip64 end of central directory record
 		esbc.putUShort(45); // version made by
 		esbc.putUShort(45); // version needed to extract
 		esbc.putUInt(0); // number of this disk
 		esbc.putUInt(0); // number of the disk with the start of the central directroy
-		esbc.putULong(BigInteger.valueOf(localFiles.size())); // total number of entries in the central directory on this disk
-		esbc.putULong(BigInteger.valueOf(localFiles.size())); // total number of entries in the central directory
+		esbc.putULong(localFiles.size()); // total number of entries in the central directory on this disk
+		esbc.putULong(localFiles.size()); // total number of entries in the central directory
 		esbc.putULong(centerDirSize); // size of central directory
 		esbc.putULong(centerDirStart); // offset of start of central directory with respect to the starting disk number
-	}
-
-	@Override
-	public final void zipFileAddDirectory() throws IOException
-	{
-		localFiles.get(localFiles.size() - 1).localFileAddDirectory();
 	}
 
 	@Override
@@ -369,8 +346,8 @@ public final class ZipFile implements ICompress
 		zip64 = false;
 		var lTrrntzip = true;
 
-		centerDirStart = BigInteger.valueOf(esbc.position());
-		if (centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) >= 0)
+		centerDirStart = esbc.position();
+		if (centerDirStart >= 0xffffffffL)
 			zip64 = true;
 		if (localFiles.size() > 0xffff)
 			zip64 = true;
@@ -378,19 +355,19 @@ public final class ZipFile implements ICompress
 		esbc.startChecksum();
 		for (final LocalFile t : localFiles)
 		{
-			t.centeralDirectoryWrite(esbc);
+			t.centralDirectoryWrite(esbc);
 			zip64 |= t.isZip64();
 			lTrrntzip &= t.isTrrntZip();
 		}
 
-		centerDirSize = BigInteger.valueOf(esbc.position() - centerDirStart.longValue());
+		centerDirSize = esbc.position() - centerDirStart;
 
 		fileComment = lTrrntzip ? String.format("TORRENTZIPPED-%08X", esbc.endChecksum()).getBytes(StandardCharsets.US_ASCII) : new byte[0]; //$NON-NLS-1$ //$NON-NLS-2$
 		pZipStatus = lTrrntzip ? EnumSet.of(ZipStatus.TRRNTZIP) : EnumSet.noneOf(ZipStatus.class);
 
 		if (zip64)
 		{
-			endOfCenterDir64 = BigInteger.valueOf(esbc.position());
+			endOfCenterDir64 = esbc.position();
 			zip64EndOfCentralDirWrite();
 			zip64EndOfCentralDirectoryLocatorWrite();
 		}
@@ -459,8 +436,8 @@ public final class ZipFile implements ICompress
 		zipFileClose();
 		pZipStatus = EnumSet.noneOf(ZipStatus.class);
 		zip64 = false;
-		centerDirStart = BigInteger.valueOf(0);
-		centerDirSize = BigInteger.valueOf(0);
+		centerDirStart = 0;
+		centerDirSize = 0;
 		zipFileInfo = null;
 
 		try
@@ -509,12 +486,10 @@ public final class ZipFile implements ICompress
 			if (zRet != ZipReturn.ZIPGOOD)
 				return fail(zRet);
 
-			boolean[] trrntHolder = {trrntzip};
-			zRet = readLocalFileHeaders(trrntHolder);
-			trrntzip = trrntHolder[0];
-			if (zRet != ZipReturn.ZIPGOOD)
-				return fail(zRet);
-
+			final var scan = readLocalFileHeaders(trrntzip);
+			if (scan.status() != ZipReturn.ZIPGOOD)
+				return fail(scan.status());
+			trrntzip = scan.trrntZip();
 			if (trrntzip)
 				trrntzip = isTorrentZipFileOrderValid();
 
@@ -536,7 +511,7 @@ public final class ZipFile implements ICompress
 
 	private final boolean isTorrentZipFileOrderValid()
 	{
-		for (var i = 0; i < localFilesCount.intValue() - 1; i++)
+		for (var i = 0; i < localFilesCount - 1; i++)
 		{
 			if (TorrentZipCheck.trrntZipStringCompare(localFiles.get(i).getFileName(), localFiles.get(i + 1).getFileName()) >= 0)
 			{
@@ -548,11 +523,9 @@ public final class ZipFile implements ICompress
 
 	private final boolean hasNoUnnecessaryDirectoryEntries()
 	{
-		for (var i = 0; i < localFilesCount.intValue() - 1; i++)
+		for (var i = 0; i < localFilesCount - 1; i++)
 		{
-			String filename0 = localFiles.get(i).getFileName();
-			String filename1 = localFiles.get(i + 1).getFileName();
-			if (filename0.charAt(filename0.length() - 1) == '/' && filename1.length() > filename0.length() && TorrentZipCheck.trrntZipStringCompare(filename0, filename1.substring(0, filename0.length())) == 0)
+			if (TorrentZipCheck.isUnnecessaryDirectoryEntry(localFiles.get(i).getFileName(), localFiles.get(i + 1).getFileName()))
 			{
 				return false;
 			}
@@ -562,8 +535,8 @@ public final class ZipFile implements ICompress
 
 	private final ZipReturn readZip64StructuresIfNeeded(long endOfCentralDir) throws IOException
 	{
-		final boolean sizeSentinel = centerDirStart.compareTo(BigInteger.valueOf(0xffffffffL)) == 0 || centerDirSize.compareTo(BigInteger.valueOf(0xffffffffL)) == 0;
-		final boolean countSentinel = localFilesCount.compareTo(BigInteger.valueOf(0xffff)) == 0;
+		final boolean sizeSentinel = centerDirStart == 0xffffffffL || centerDirSize == 0xffffffffL;
+		final boolean countSentinel = localFilesCount == 0xffff;
 		if (sizeSentinel || countSentinel)
 		{
 			// the classic EOCD may legally store the literal count 65,535, so the
@@ -575,7 +548,7 @@ public final class ZipFile implements ICompress
 			ZipReturn zRet = zip64EndOfCentralDirectoryLocatorRead();
 			if (zRet != ZipReturn.ZIPGOOD)
 				return zRet;
-			esbc.position(endOfCenterDir64.longValue());
+			esbc.position(endOfCenterDir64);
 			zRet = zip64EndOfCentralDirRead();
 			if (zRet != ZipReturn.ZIPGOOD)
 				return zRet;
@@ -593,12 +566,12 @@ public final class ZipFile implements ICompress
 	{
 		if (fileComment.length == 22 && new String(fileComment, StandardCharsets.US_ASCII).substring(0, 14).equals("TORRENTZIPPED-")) //$NON-NLS-1$ //$NON-NLS-2$
 		{
-			final var buffer = new byte[centerDirSize.intValue()];
-			esbc.position(centerDirStart.longValue());
+			final var buffer = new byte[(int) centerDirSize];
+			esbc.position(centerDirStart);
 			esbc.startChecksum();
 			esbc.get(buffer);
 			long r = esbc.endChecksum();
-			final var tcrc = new String(fileComment, StandardCharsets.US_ASCII).substring(14, 22); //$NON-NLS-1$
+			final var tcrc = new String(fileComment, StandardCharsets.US_ASCII).substring(14, 22); //$NON-NLS-1$ //$NON-NLS-2$
 			final var zcrc = String.format("%08X", r); //$NON-NLS-1$
 			if (tcrc.equals(zcrc))
 				return true;
@@ -608,9 +581,9 @@ public final class ZipFile implements ICompress
 
 	private final ZipReturn readCentralDirectoryEntries() throws IOException
 	{
-		esbc.position(centerDirStart.longValue());
+		esbc.position(centerDirStart);
 		localFiles.clear();
-		for (var i = 0; i < localFilesCount.longValue(); i++)
+		for (var i = 0; i < localFilesCount; i++)
 		{
 			final var lc = new LocalFile(esbc);
 			ZipReturn zRet = lc.centralDirectoryRead();
@@ -625,16 +598,20 @@ public final class ZipFile implements ICompress
 		return ZipReturn.ZIPGOOD;
 	}
 
-	private final ZipReturn readLocalFileHeaders(boolean[] trrntzipHolder) throws IOException
+	private record LocalHeaderScan(ZipReturn status, boolean trrntZip)
 	{
-		for (var i = 0; i < localFilesCount.intValue(); i++)
+	}
+
+	private final LocalHeaderScan readLocalFileHeaders(boolean trrntzip) throws IOException
+	{
+		for (var i = 0; i < localFilesCount; i++)
 		{
 			ZipReturn zRet = localFiles.get(i).localFileHeaderRead();
 			if (zRet != ZipReturn.ZIPGOOD)
-				return zRet;
-			trrntzipHolder[0] &= localFiles.get(i).isTrrntZip();
+				return new LocalHeaderScan(zRet, trrntzip);
+			trrntzip &= localFiles.get(i).isTrrntZip();
 		}
-		return ZipReturn.ZIPGOOD;
+		return new LocalHeaderScan(ZipReturn.ZIPGOOD, trrntzip);
 	}
 
 	private final ZipReturn fail(ZipReturn r) throws IOException
@@ -643,76 +620,37 @@ public final class ZipFile implements ICompress
 		return r;
 	}
 
-	public final ZipReturn zipFileOpenReadStream(int index, boolean raw, AtomicReference<InputStream> stream, AtomicReference<BigInteger> streamSize, AtomicInteger compressionMethod) throws IOException
+	@Override
+	public final ICompress.OpenedReadStream zipFileOpenReadStream(int index, boolean raw) throws IOException
 	{
-		streamSize.set(BigInteger.valueOf(0));
-		compressionMethod.set(0);
 		readIndex = index;
-		stream.set(null);
 		if (zipOpen != ZipOpenType.OPENREAD)
-			return ZipReturn.ZIPREADINGFROMOUTPUTFILE;
+			return ICompress.OpenedReadStream.failed(ZipReturn.ZIPREADINGFROMOUTPUTFILE);
 
-		ZipReturn zRet = localFiles.get(index).localFileHeaderRead();
+		final var localFile = localFiles.get(index);
+		ZipReturn zRet = localFile.localFileHeaderRead();
 		if (zRet != ZipReturn.ZIPGOOD)
 		{
 			zipFileClose();
-			return zRet;
+			return ICompress.OpenedReadStream.failed(zRet);
 		}
 
-		return localFiles.get(index).localFileOpenReadStream(raw, stream, streamSize, compressionMethod, inflater);
-	}
-
-	public final ZipReturn zipFileOpenReadStreamQuick(BigInteger pos, boolean raw, AtomicReference<InputStream> stream, AtomicReference<BigInteger> streamSize, AtomicInteger compressionMethod) throws IOException
-	{
-		final var tmpFile = new LocalFile(esbc);
-		tmpFile.localFilePos(pos);
-
-		localFiles.clear();
-		localFiles.add(tmpFile);
-		ZipReturn zr = tmpFile.localFileHeaderReadQuick();
-		if (zr != ZipReturn.ZIPGOOD)
-		{
-			stream.set(null);
-			streamSize.set(BigInteger.valueOf(0));
-			compressionMethod.set(0);
-			return zr;
-		}
-		readIndex = 0;
-
-		return tmpFile.localFileOpenReadStream(raw, stream, streamSize, compressionMethod, inflater);
+		return localFile.localFileOpenReadStream(raw, inflater);
 	}
 
 	@Override
-	public final ZipReturn zipFileOpenWriteStream(boolean raw, boolean trrntzip, String filename, BigInteger uncompressedSize, short compressionMethod, AtomicReference<OutputStream> stream) throws IOException
+	public final ICompress.OpenedWriteStream zipFileOpenWriteStream(boolean raw, boolean trrntzip, String filename, long uncompressedSize, short compressionMethod) throws IOException
 	{
-		stream.set(null);
 		if (zipOpen != ZipOpenType.OPENWRITE)
-			return ZipReturn.ZIPWRITINGTOINPUTFILE;
+			return ICompress.OpenedWriteStream.failed(ZipReturn.ZIPWRITINGTOINPUTFILE);
 
 		final var lf = new LocalFile(esbc, filename);
 
-		ZipReturn retVal = lf.localFileOpenWriteStream(raw, trrntzip, uncompressedSize, compressionMethod, stream, deflater);
+		final var retVal = lf.localFileOpenWriteStream(raw, trrntzip, uncompressedSize, compressionMethod, deflater);
 
 		localFiles.add(lf);
 
 		return retVal;
-	}
-
-	@Override
-	public final ZipReturn zipFileRollBack() throws IOException
-	{
-		if (zipOpen != ZipOpenType.OPENWRITE)
-			return ZipReturn.ZIPWRITINGTOINPUTFILE;
-
-		int fileCount = localFiles.size();
-		if (fileCount == 0)
-			return ZipReturn.ZIPERRORROLLBACKFILE;
-
-		final var lf = localFiles.get(fileCount - 1);
-
-		localFiles.remove(fileCount - 1);
-		esbc.position(lf.localFilePos().longValueExact());
-		return ZipReturn.ZIPGOOD;
 	}
 
 	@Override

@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,7 +15,6 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -79,30 +77,6 @@ class ZipFileTest {
         try (var openZip = new ZipFile()) {
             assertNotEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true),
                     "a truncated zip must not open");
-            openZip.zipFileClose();
-        }
-    }
-
-    @Test
-    void rollBackRemovesTheLastWrittenEntry() throws Exception {
-        final var zip = tempDir.resolve("rollback.zip");
-
-        try (var writer = new ZipFile()) {
-            assertEquals(ZipReturn.ZIPGOOD, writer.zipFileCreate(zip.toFile()));
-            TestZipFixtures.writeOwnEntry(writer, "a.txt", new byte[0]);
-
-            final var stream = new AtomicReference<java.io.OutputStream>();
-            assertEquals(ZipReturn.ZIPGOOD,
-                    writer.zipFileOpenWriteStream(false, true, "b.txt", BigInteger.valueOf(0), (short) 8, stream));
-            assertEquals(ZipReturn.ZIPGOOD, writer.zipFileRollBack());
-
-            writer.zipFileClose();
-        }
-
-        try (var openZip = new ZipFile()) {
-            assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true));
-            assertEquals(1, openZip.localFilesCount(), "rollback must drop the last entry");
-            assertEquals("a.txt", openZip.filename(0));
             openZip.zipFileClose();
         }
     }

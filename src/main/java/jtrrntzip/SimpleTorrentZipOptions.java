@@ -1,20 +1,7 @@
 package jtrrntzip;
 
-public class SimpleTorrentZipOptions implements TorrentZipOptions
+public record SimpleTorrentZipOptions(boolean forceRezip, boolean checkOnly) implements TorrentZipOptions
 {
-	private boolean forceRezip = false;
-	private boolean checkOnly = false;
-
-	public SimpleTorrentZipOptions()
-	{
-	}
-
-	public SimpleTorrentZipOptions(final boolean forceRezip, final boolean checkOnly)
-	{
-		this.forceRezip = forceRezip;
-		this.checkOnly = checkOnly;
-	}
-
 	@Override
 	public boolean isForceRezip()
 	{
@@ -26,5 +13,4 @@ public class SimpleTorrentZipOptions implements TorrentZipOptions
 	{
 		return checkOnly;
 	}
-
 }

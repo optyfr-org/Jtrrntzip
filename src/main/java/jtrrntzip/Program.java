@@ -12,7 +12,7 @@ import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.io.FilenameUtils;
 
-public final class Program extends AbstractTorrentZipOptions implements LogCallback
+public final class Program implements LogCallback, TorrentZipOptions
 {
 	static final int EXIT_OK = 0;
 	static final int EXIT_FAILED = 1;
@@ -32,23 +32,34 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 		System.exit(new Program(args).run());
 	}
 
+	private final CliOptions options;
+
 	private TorrentZip tz;
 
 	public Program(final String[] args)
 	{
-		super(args);
+		options = CliOptions.parse(args);
 	}
 
 	int run()
 	{
-		if(argfiles == null)
-			return EXIT_OK;
+		switch (options.info())
+		{
+			case HELP:
+				new HelpPrinter(specificationVersion()).printTo(System.out); //NOSONAR
+				return EXIT_OK;
+			case VERSION:
+				System.out.format("TorrentZip v%s", specificationVersion()); //NOSONAR
+				return EXIT_OK;
+			case NONE:
+				break;
+		}
 
 		var failures = 0;
-		if(!argfiles.isEmpty())
+		if(!options.argfiles().isEmpty())
 		{
 			tz = new TorrentZip(this, this);
-			for(final File argfile : argfiles)
+			for(final File argfile : options.argfiles())
 			{
 				// first check if arg is a directory
 				if(argfile.isDirectory())
@@ -62,7 +73,7 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 			}
 		}
 
-		if(guiLaunch)
+		if(options.guiLaunch())
 		{
 			System.out.format(Messages.getString("Program.Complete"));  //NOSONAR
 			try(final var scanner = new Scanner(System.in))
@@ -72,6 +83,11 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 		}
 
 		return failures > 0 ? EXIT_FAILED : EXIT_OK;
+	}
+
+	private static String specificationVersion()
+	{
+		return Program.class.getPackage().getSpecificationVersion();
 	}
 
 	private int processDir(final File dir)
@@ -91,7 +107,7 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 		{
 			if(f.isDirectory())
 			{
-				if(!noRecursion)
+				if(!options.noRecursion())
 					failures += processDir(f);
 			}
 			else
@@ -197,6 +213,18 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 	}
 
 	@Override
+	public final boolean isForceRezip()
+	{
+		return options.forceReZip();
+	}
+
+	@Override
+	public final boolean isCheckOnly()
+	{
+		return options.checkOnly();
+	}
+
+	@Override
 	public final void statusLogCallBack(final String log)
 	{
 		System.out.format("%s%n", log); //NOSONAR
@@ -211,7 +239,7 @@ public final class Program extends AbstractTorrentZipOptions implements LogCallb
 	@Override
 	public final boolean isVerboseLogging()
 	{
-		return verboseLogging;
+		return options.verboseLogging();
 	}
 
 }

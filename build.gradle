@@ -21,7 +21,7 @@ java {
 
 version = providers.gradleProperty('releaseVersion')
         .orElse(providers.environmentVariable('RELEASE_VERSION'))
-        .getOrElse('1.4.0')
+        .getOrElse('2.0.0')
 group = "com.github.optyfr"
 
 base {

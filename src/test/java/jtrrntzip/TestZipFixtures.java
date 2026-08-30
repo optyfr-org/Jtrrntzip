@@ -3,8 +3,6 @@ package jtrrntzip;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -12,7 +10,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.CRC32;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.ZipEntry;
@@ -69,12 +66,13 @@ final class TestZipFixtures {
     }
 
     static void writeOwnEntry(final ZipFile zf, final String name, final byte[] content) throws IOException {
-        final var stream = new AtomicReference<OutputStream>();
-        if (zf.zipFileOpenWriteStream(false, true, name, BigInteger.valueOf(content.length), (short) 8, stream) != ZipReturn.ZIPGOOD)
+        final var opened = zf.zipFileOpenWriteStream(false, true, name, content.length, (short) 8);
+        if (opened.status() != ZipReturn.ZIPGOOD)
             throw new IOException("failed to open write stream for " + name);
+        final var stream = opened.stream();
         if (content.length > 0)
-            stream.get().write(content);
-        if (stream.get() instanceof DeflaterOutputStream ds)
+            stream.write(content);
+        if (stream instanceof DeflaterOutputStream ds)
             ds.finish();
         if (zf.zipFileCloseWriteStream(crcOf(content)) != ZipReturn.ZIPGOOD)
             throw new IOException("failed to close write stream for " + name);
