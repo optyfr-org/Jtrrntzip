@@ -2,6 +2,7 @@ package jtrrntzip.supportedfiles.zipfile;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 /**
  * Encodes and decodes zip entry names according to the zip specification.
@@ -30,6 +31,22 @@ final class ZipNameCodec {
 	 *            true if the unicode flag should be set
 	 */
 	record EncodedName(byte[] bytes, boolean unicodeFlag) {
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) return true;
+			if (!(o instanceof EncodedName(var otherBytes, var otherUnicodeFlag))) return false;
+			return unicodeFlag == otherUnicodeFlag && Arrays.equals(bytes, otherBytes);
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * Arrays.hashCode(bytes) + Boolean.hashCode(unicodeFlag);
+		}
+
+		@Override
+		public String toString() {
+			return "EncodedName[bytes=" + Arrays.toString(bytes) + ", unicodeFlag=" + unicodeFlag + "]";
+		}
 	}
 
 	/**

@@ -19,8 +19,7 @@ graalvmNative {
             }
             buildArgs.add('-H:+AddAllCharsets')
             buildArgs.add('-H:+ReportExceptionStackTraces')
-            // agent metadata is copied to build/native/agent-config (see metadataCopy),
-            // keep it visible to native-image without polluting src/main/resources
+            configurationFileDirectories.from(layout.projectDirectory.dir("gradle/native-image"))
             configurationFileDirectories.from(layout.buildDirectory.dir("native/agent-config"))
         }
         all {
@@ -37,9 +36,9 @@ graalvmNative {
         trackReflectionMetadata = true
 
         metadataCopy {
-            inputTaskNames.add("run")
+            inputTaskNames.add("test")
             outputDirectories.add("build/native/agent-config")
-            mergeWithExisting = false
+            mergeWithExisting = true
         }
     }
 }

@@ -35,6 +35,14 @@ final class ZipExtraFieldProcessor {
 		}
 	}
 
+	/**
+	 * Strategy for handling the zip64 extra field (0x0001).
+	 */
+	@FunctionalInterface
+	private interface Zip64ExtraHandler {
+		ZipReturn handle(ByteBuffer bb, ExtraFieldState state);
+	}
+
 	private ZipExtraFieldProcessor() {
 	}
 
@@ -47,26 +55,8 @@ final class ZipExtraFieldProcessor {
 	static ZipReturn processCentralDirectoryExtra(byte[] extraField, int extraFieldLength,
 			byte[] rawFileName, ExtraFieldState state) {
 		ByteBuffer bb = ByteBuffer.wrap(extraField).order(ByteOrder.LITTLE_ENDIAN);
-		while (extraFieldLength > bb.position()) {
-			int type = UnsignedTypes.toUShort(bb.getShort());
-			int blockLength = UnsignedTypes.toUShort(bb.getShort());
-			int dataStart = bb.position();
-			switch (type) {
-				case 0x0001:
-					handleZip64ExtraForCentralDir(bb, state);
-					break;
-				case 0x7075:
-					ZipReturn r = handleUnicodeExtra(bb, blockLength, rawFileName, ZipReturn.ZIPCENTRALDIRERROR, state);
-					if (r != ZipReturn.ZIPGOOD) {
-						return r;
-					}
-					break;
-				default:
-					break;
-			}
-			bb.position(dataStart + blockLength);
-		}
-		return ZipReturn.ZIPGOOD;
+		return processExtraFieldEntries(bb, extraFieldLength, rawFileName,
+				ZipReturn.ZIPCENTRALDIRERROR, ZipExtraFieldProcessor::handleZip64ExtraForCentralDir, state);
 	}
 
 	/**
@@ -81,32 +71,33 @@ final class ZipExtraFieldProcessor {
 			ExtraFieldState state) {
 		state.zip64 = false;
 		ByteBuffer bb = ByteBuffer.wrap(extraField).order(ByteOrder.LITTLE_ENDIAN);
+		return processExtraFieldEntries(bb, extraFieldLength, rawFileName,
+				ZipReturn.ZIPLOCALFILEHEADERERROR,
+				(buf, s) -> handleLocalZip64Extra(buf, expectedCompressedSize, expectedUncompressedSize, s),
+				state);
+	}
+
+	private static ZipReturn processExtraFieldEntries(ByteBuffer bb, int extraFieldLength,
+			byte[] rawFileName, ZipReturn unicodeMismatchError,
+			Zip64ExtraHandler zip64Handler, ExtraFieldState state) {
 		while (extraFieldLength > bb.position()) {
 			int type = UnsignedTypes.toUShort(bb.getShort());
 			int blockLength = UnsignedTypes.toUShort(bb.getShort());
 			int dataStart = bb.position();
-			switch (type) {
-				case 0x0001:
-					ZipReturn z = handleLocalZip64Extra(bb, expectedCompressedSize, expectedUncompressedSize, state);
-					if (z != ZipReturn.ZIPGOOD) {
-						return z;
-					}
-					break;
-				case 0x7075:
-					ZipReturn r = handleUnicodeExtra(bb, blockLength, rawFileName, ZipReturn.ZIPLOCALFILEHEADERERROR, state);
-					if (r != ZipReturn.ZIPGOOD) {
-						return r;
-					}
-					break;
-				default:
-					break;
+			ZipReturn r = switch (type) {
+				case 0x0001 -> zip64Handler.handle(bb, state);
+				case 0x7075 -> handleUnicodeExtra(bb, blockLength, rawFileName, unicodeMismatchError, state);
+				default -> ZipReturn.ZIPGOOD;
+			};
+			if (r != ZipReturn.ZIPGOOD) {
+				return r;
 			}
 			bb.position(dataStart + blockLength);
 		}
 		return ZipReturn.ZIPGOOD;
 	}
 
-	private static void handleZip64ExtraForCentralDir(ByteBuffer bb, ExtraFieldState state) {
+	private static ZipReturn handleZip64ExtraForCentralDir(ByteBuffer bb, ExtraFieldState state) {
 		state.zip64 = true;
 		if (state.uncompressedSize == 0xffffffffL)
 			state.uncompressedSize = bb.getLong();
@@ -114,6 +105,7 @@ final class ZipExtraFieldProcessor {
 			state.compressedSize = bb.getLong();
 		if (state.relativeOffsetOfLocalHeader == 0xffffffffL)
 			state.relativeOffsetOfLocalHeader = bb.getLong();
+		return ZipReturn.ZIPGOOD;
 	}
 
 	private static ZipReturn handleLocalZip64Extra(ByteBuffer bb, long expectedCompressedSize,
@@ -134,6 +126,9 @@ final class ZipExtraFieldProcessor {
 
 	private static ZipReturn handleUnicodeExtra(ByteBuffer bb, int blockLength, byte[] rawFileName,
 			ZipReturn mismatchError, ExtraFieldState state) {
+		if (blockLength < 5)
+			return mismatchError;
+
 		@SuppressWarnings("unused")
 		final byte version = bb.get();
 		final long nameCRC32 = UnsignedTypes.toUInt(bb.getInt());
@@ -143,9 +138,6 @@ final class ZipExtraFieldProcessor {
 		final long fCRC = crcTest.getValue();
 
 		if (nameCRC32 != fCRC)
-			return mismatchError;
-
-		if (blockLength < 5)
 			return mismatchError;
 
 		final int charLen = blockLength - 5;

@@ -5,7 +5,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 
 import jtrrntzip.ZipReturn;
-import jtrrntzip.ZipStatus;
 import jtrrntzip.supportedfiles.EnhancedSeekableByteChannel;
 
 /**

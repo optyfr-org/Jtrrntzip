@@ -19,11 +19,14 @@
  * writer with torrentzip and zip64 support</li>
  * </ul>
  */
-module trrntzip {
+module jtrrntzip {
     exports jtrrntzip.supportedfiles;
     exports jtrrntzip.supportedfiles.zipfile;
     exports jtrrntzip;
 
     requires org.apache.commons.io;
+    requires jcommander;
     requires java.logging;
+
+    opens jtrrntzip to jcommander;
 }

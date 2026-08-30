@@ -1,13 +1,16 @@
 [versions]
 commons-io = "2.22.0"
+jcommander = "3.0"
 junit = "5.10.5"
 jacoco = "0.8.14"
 sonarqube = "7.3.0.8198"
 jlink = "4.1.1"
 graalvm-native = "1.1.11"
+extra-java-module-info = "1.14.2"
 
 [libraries]
 commons-io = { module = "commons-io:commons-io", version.ref = "commons-io" }
+jcommander = { module = "org.jcommander:jcommander", version.ref = "jcommander" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
@@ -16,3 +19,4 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
 jlink = { id = "org.beryx.jlink", version.ref = "jlink" }
 graalvm = { id = "org.graalvm.buildtools.native", version.ref = "graalvm-native" }
+extra-java-module-info = { id = "org.gradlex.extra-java-module-info", version.ref = "extra-java-module-info" }

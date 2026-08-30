@@ -11,6 +11,8 @@ import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.io.FilenameUtils;
 
+import com.beust.jcommander.ParameterException;
+
 /**
  * The command line entry point of Jtrrntzip.
  *
@@ -51,8 +53,13 @@ public final class Program implements LogCallback {
             System.exit(EXIT_USAGE);
             return;
         }
-
-        System.exit(new Program(args).run());
+        try {
+            System.exit(new Program(args).run());
+        } catch (final ParameterException e) {
+            System.err.println(e.getMessage()); // NOSONAR
+            System.err.println(Messages.getString("Program.Usage")); // NOSONAR
+            System.exit(EXIT_USAGE);
+        }
     }
 
     private final CliOptions options;

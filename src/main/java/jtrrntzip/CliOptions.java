@@ -4,8 +4,13 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
+import com.beust.jcommander.Parameters;
+
 /**
- * The parsed command line of the program.
+ * The parsed command line of the program, parsed with JCommander.
  *
  * @param noRecursion
  *            {@code true} when sub-directories are not searched recursively
@@ -49,7 +54,37 @@ public record CliOptions(boolean noRecursion, boolean forceReZip, boolean checkO
     }
 
     /**
-     * Parses the raw command line arguments.
+     * JCommander-annotated mutable holder used only during parsing.
+     */
+    @Parameters(resourceBundle = "jtrrntzip.messages")
+    private static final class JCommanderArgs {
+        @Parameter(names = "-?", descriptionKey = "AbstractTorrentZipOptions.ShowThisHelp")
+        private boolean help;
+
+        @Parameter(names = "-v", descriptionKey = "AbstractTorrentZipOptions.ShowVersion")
+        private boolean version;
+
+        @Parameter(names = "-s", descriptionKey = "AbstractTorrentZipOptions.PreventSubDirRecursion")
+        private boolean noRecursion;
+
+        @Parameter(names = "-f", descriptionKey = "AbstractTorrentZipOptions.ForceReZip")
+        private boolean forceReZip;
+
+        @Parameter(names = "-c", descriptionKey = "AbstractTorrentZipOptions.CheckOnly")
+        private boolean checkOnly;
+
+        @Parameter(names = "-l", descriptionKey = "AbstractTorrentZipOptions.VerboseLogging")
+        private boolean verboseLogging;
+
+        @Parameter(names = "-g", descriptionKey = "AbstractTorrentZipOptions.PauseWhenFinished")
+        private boolean guiLaunch;
+
+        @Parameter(description = "<files...>")
+        private List<String> argfiles = new ArrayList<>();
+    }
+
+    /**
+     * Parses the raw command line arguments using JCommander.
      *
      * <p>Recognized options are {@code -?} (help), {@code -v} (version),
      * {@code -s}, {@code -f}, {@code -c}, {@code -l} and {@code -g}; an
@@ -60,31 +95,37 @@ public record CliOptions(boolean noRecursion, boolean forceReZip, boolean checkO
      * @param args
      *            the raw command line arguments
      * @return the parsed options, never {@code null}
+     * @throws ParameterException
+     *             when the arguments contain an unrecognized option
      */
     public static CliOptions parse(final String[] args) {
-        var noRecursion = false;
-        var forceReZip = false;
-        var checkOnly = false;
-        var verboseLogging = false;
-        var guiLaunch = false;
-        final var files = new ArrayList<File>();
+        final var holder = new JCommanderArgs();
+        JCommander.newBuilder()
+                .addObject(holder)
+                .build()
+                .parse(args);
 
+        final Info info = determineInfo(args);
+
+        final List<File> files = info != Info.NONE ? List.of()
+                : holder.argfiles.stream().map(File::new).toList();
+
+        return new CliOptions(holder.noRecursion, holder.forceReZip, holder.checkOnly,
+                holder.verboseLogging, holder.guiLaunch, info, files);
+    }
+
+    /**
+     * Scans the raw arguments left-to-right for the first info flag
+     * ({@code -?} or {@code -v}) and returns the corresponding
+     * {@link Info} value.
+     */
+    private static Info determineInfo(final String[] args) {
         for (final String arg : args) {
-            switch (arg) {
-                case "-?" -> {
-                    return new CliOptions(noRecursion, forceReZip, checkOnly, verboseLogging, guiLaunch, Info.HELP, List.of());
-                }
-                case "-v" -> {
-                    return new CliOptions(noRecursion, forceReZip, checkOnly, verboseLogging, guiLaunch, Info.VERSION, List.of());
-                }
-                case "-s" -> noRecursion = true;
-                case "-f" -> forceReZip = true;
-                case "-c" -> checkOnly = true;
-                case "-l" -> verboseLogging = true;
-                case "-g" -> guiLaunch = true;
-                default -> files.add(new File(arg));
-            }
+            if ("-?".equals(arg))
+                return Info.HELP;
+            if ("-v".equals(arg))
+                return Info.VERSION;
         }
-        return new CliOptions(noRecursion, forceReZip, checkOnly, verboseLogging, guiLaunch, Info.NONE, List.copyOf(files));
+        return Info.NONE;
     }
 }

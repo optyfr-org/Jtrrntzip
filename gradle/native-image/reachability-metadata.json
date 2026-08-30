@@ -1,0 +1,63 @@
+{
+  "reflection": [
+    {
+      "type": "boolean"
+    },
+    {
+      "type": "com.beust.jcommander.converters.BooleanConverter",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "com.beust.jcommander.converters.StringConverter",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.beust.jcommander.validators.NoValidator",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.beust.jcommander.validators.NoValueValidator",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "jtrrntzip.CliOptions$JCommanderArgs",
+      "fields": [
+        { "name": "argfiles" },
+        { "name": "checkOnly" },
+        { "name": "forceReZip" },
+        { "name": "guiLaunch" },
+        { "name": "help" },
+        { "name": "noRecursion" },
+        { "name": "verboseLogging" },
+        { "name": "version" }
+      ]
+    }
+  ],
+  "resources": [
+    { "glob": "jtrrntzip/messages.properties" },
+    { "glob": "jtrrntzip/messages_fr.properties" },
+    { "bundle": "jtrrntzip.messages" }
+  ]
+}

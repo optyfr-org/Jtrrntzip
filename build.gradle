@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.sonarqube)
     alias(libs.plugins.jlink)
     alias(libs.plugins.graalvm)
+    alias(libs.plugins.extra.java.module.info)
 }
 
 java {
@@ -45,8 +46,14 @@ application {
     mainClass = 'jtrrntzip.Program'
 }
 
+extraJavaModuleInfo {
+    failOnMissingModuleInfo = false
+    automaticModule('jcommander-3.0.jar', 'jcommander')
+}
+
 dependencies {
     implementation libs.commons.io
+    implementation libs.jcommander
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit.jupiter
     testRuntimeOnly libs.junit.platform.launcher
