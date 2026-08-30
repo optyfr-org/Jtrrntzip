@@ -19,7 +19,9 @@ java {
     withSourcesJar()
 }
 
-version = '1.4.0'
+version = providers.gradleProperty('releaseVersion')
+        .orElse(providers.environmentVariable('RELEASE_VERSION'))
+        .getOrElse('1.4.0')
 group = "com.github.optyfr"
 
 base {

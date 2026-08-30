@@ -16,3 +16,17 @@ task distZip2(type: Zip) {
 }
 
 assemble.dependsOn 'distZip2'
+
+jlink {
+    options = ['--strip-debug', '--no-header-files', '--no-man-pages']
+    launcher {
+        name = 'jtrrntzip'
+    }
+    jpackage {
+        skipInstaller = true
+        imageName = 'Jtrrntzip'
+        if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            imageOptions = ['--win-console']
+        }
+    }
+}

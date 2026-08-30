@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '25'
+  JAVA_DIST: graalvm
+
+jobs:
+  prepare:
+    name: Create release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
+      version: ${{ steps.vars.outputs.version }}
+    steps:
+      - name: Get tag version
+        id: vars
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Tag: ${TAG}"
+          echo "Version: ${VERSION}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ steps.vars.outputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release ${{ steps.vars.outputs.tag }} already exists"
+          else
+            gh release create "${{ steps.vars.outputs.tag }}" \
+              --repo "${{ github.repository }}" \
+              --title "${{ steps.vars.outputs.tag }}" \
+              --generate-notes
+          fi
+
+  library:
+    name: Library artifact and Maven package
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: ${{ env.JAVA_DIST }}
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+
+      - name: Build library artifact
+        run: ./gradlew distZip2 -x test
+
+      - name: Publish to GitHub Packages
+        env:
+          USERNAME: ${{ github.actor }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew publish -x test
+
+      - name: Add library artifact to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare.outputs.tag }}" \
+            "build/distributions/Jtrrntzip-${RELEASE_VERSION}.zip" \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+  jpackage:
+    name: jpackage ${{ matrix.id }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: windows-amd64
+            os: windows-latest
+          - id: linux-amd64
+            os: ubuntu-latest
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: ${{ env.JAVA_DIST }}
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+
+      - name: Build jpackage image
+        run: ./gradlew jpackageImage -x test
+
+      - name: Package jpackage artifact
+        run: |
+          ASSET="Jtrrntzip-${RELEASE_VERSION}-jpackage-${{ matrix.id }}.zip"
+          python -m zipfile -c "${ASSET}" build/jpackage/Jtrrntzip
+          echo "ASSET=${ASSET}" >> "$GITHUB_ENV"
+
+      - name: Add jpackage artifact to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare.outputs.tag }}" \
+            "${ASSET}" \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+  native:
+    name: native ${{ matrix.id }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: windows-amd64
+            os: windows-latest
+            binary: jtrrntzip.exe
+            ext: .exe
+          - id: linux-amd64
+            os: ubuntu-latest
+            binary: jtrrntzip
+            ext: ''
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+            binary: jtrrntzip
+            ext: ''
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: ${{ env.JAVA_DIST }}
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+
+      - name: Native compile
+        run: |
+          mkdir -p build/native/agent-config
+          ./gradlew nativeCompile -x test
+
+      - name: Add native artifact to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ASSET="jtrrntzip-${RELEASE_VERSION}-${{ matrix.id }}${{ matrix.ext }}"
+          cp "build/native/nativeCompile/${{ matrix.binary }}" "${ASSET}"
+          gh release upload "${{ needs.prepare.outputs.tag }}" \
+            "${ASSET}" \
+            --repo "${{ github.repository }}" \
+            --clobber

@@ -1,6 +1,7 @@
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 
 def os = DefaultNativePlatform.currentOperatingSystem
+def arch = DefaultNativePlatform.currentArchitecture
 
 graalvmNative {
     toolchainDetection = false
@@ -8,10 +9,12 @@ graalvmNative {
         main {
             mainClass = 'jtrrntzip.Program'
             imageName = 'jtrrntzip'
-            buildArgs.add('-march=x86-64-v2')
+            if (arch.isAmd64()) {
+                buildArgs.add('-march=x86-64-v2')
+            }
             buildArgs.add('-O3')
             buildArgs.add('--future-defaults=all')
-            if(os.isLinux()) {
+            if (os.isLinux() && arch.isAmd64()) {
                 buildArgs.add('--gc=G1')
             }
             buildArgs.add('-H:+AddAllCharsets')
