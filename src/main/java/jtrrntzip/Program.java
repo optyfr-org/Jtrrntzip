@@ -142,7 +142,7 @@ public final class Program implements LogCallback {
 
         final File[] files = dir.listFiles();
         if (files == null) {
-            System.err.println(dir);
+            System.err.println(dir); // NOSONAR
             return 1;
         }
 
@@ -195,7 +195,7 @@ public final class Program implements LogCallback {
             }
             return failures;
         } catch (final IOException e) {
-            System.err.println(describe(e));
+            System.err.println(describe(e)); // NOSONAR
             return 1;
         }
     }
@@ -215,7 +215,7 @@ public final class Program implements LogCallback {
     private static DirectoryStream<Path> openDirectoryStream(final Path dir, final String glob) throws IOException {
         try {
             return Files.newDirectoryStream(dir, glob);
-        } catch (final PatternSyntaxException e) {
+        } catch (final PatternSyntaxException _) {
             // the pattern contains glob metacharacters that do not form a valid
             // pattern, retry with all metacharacters escaped so the literal name works
             return Files.newDirectoryStream(dir, escapeGlob(glob));
@@ -235,18 +235,11 @@ public final class Program implements LogCallback {
         for (var i = 0; i < glob.length(); i++) {
             final char c = glob.charAt(i);
             switch (c) {
-                case '*':
-                case '?':
-                case '\\':
-                case '[':
-                case ']':
-                case '{':
-                case '}':
+                case '*', '?', '\\', '[', ']', '{', '}' -> {
                     sb.append('\\');
                     sb.append(c);
-                    break;
-                default:
-                    sb.append(c);
+                }
+                default -> sb.append(c);
             }
         }
         return sb.toString();
@@ -264,7 +257,7 @@ public final class Program implements LogCallback {
             final Set<TrrntZipStatus> status = tz.process(file);
             return status.contains(TrrntZipStatus.CORRUPTZIP) ? 1 : 0;
         } catch (final IOException e) {
-            System.err.println(describe(e));
+            System.err.println(describe(e)); // NOSONAR
             return 1;
         }
     }

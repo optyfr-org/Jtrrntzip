@@ -159,6 +159,7 @@ class TorrentZipCheckTest {
 
         final var status = TorrentZipCheck.checkZipFiles(zippedFiles, new DummyLogCallback());
 
+        assertFalse(status.contains(TrrntZipStatus.UNSORTED), "fold-equal names are already in order");
         assertEquals("AB", zippedFiles.get(0).name(), "fold-equal names must keep their original relative order");
         assertEquals("ab", zippedFiles.get(1).name());
     }

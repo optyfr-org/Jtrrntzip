@@ -104,7 +104,7 @@ public final class TorrentZipCheck {
     // return ExtraDirectoryEnteries if error is found.
     private static void removeUnneededDirectoryMarkers(final List<ZippedFile> zippedFiles, final EnumSet<TrrntZipStatus> tzStatus, final LogCallback statusLogCallBack) {
         var errorFound = false;
-        for (var i = 0; i < zippedFiles.size() - 1; i++) {
+        for (var i = zippedFiles.size() - 2; i >= 0; i--) {
             if (!isUnnecessaryDirectoryEntry(zippedFiles.get(i).name(), zippedFiles.get(i + 1).name()))
                 continue;
 
@@ -115,8 +115,6 @@ public final class TorrentZipCheck {
                 errorFound = true;
                 statusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.UnneededDirectoryRecordsFound")); //$NON-NLS-1$
             }
-
-            i--;
         }
     }
 
@@ -126,7 +124,7 @@ public final class TorrentZipCheck {
     // differing duplicates mark the zip corrupt so the caller skips the rebuild.
     private static void processDuplicates(final List<ZippedFile> zippedFiles, final EnumSet<TrrntZipStatus> tzStatus, final LogCallback statusLogCallBack) {
         var errorFound = false;
-        for (var i = 0; i < zippedFiles.size() - 1; i++) {
+        for (var i = zippedFiles.size() - 2; i >= 0; i--) {
             final var a = zippedFiles.get(i);
             final var b = zippedFiles.get(i + 1);
             if (!a.name().equals(b.name()))
@@ -140,7 +138,6 @@ public final class TorrentZipCheck {
 
             if (a.crc() == b.crc() && a.size() == b.size()) {
                 zippedFiles.remove(i + 1);
-                i--;
             } else {
                 tzStatus.add(TrrntZipStatus.CORRUPTZIP);
             }
@@ -189,26 +186,26 @@ public final class TorrentZipCheck {
 
         var pos1 = 0;
         var pos2 = 0;
+        var result = 0;
 
-        for (;;) {
-            if (pos1 == bytes1.length)
-                return ((pos2 == bytes2.length) ? 0 : -1);
-            if (pos2 == bytes2.length)
-                return 1;
-
-            var byte1 = bytes1[pos1++];
-            var byte2 = bytes2[pos2++];
-
-            if (byte1 >= 65 && byte1 <= 90)
-                byte1 += 0x20;
-            if (byte2 >= 65 && byte2 <= 90)
-                byte2 += 0x20;
-
-            if (byte1 < byte2)
-                return -1;
-            if (byte1 > byte2)
-                return 1;
+        while (result == 0 && pos1 < bytes1.length && pos2 < bytes2.length)
+        {
+            final var byte1 = asciiLowerFold(bytes1[pos1++]);
+            final var byte2 = asciiLowerFold(bytes2[pos2++]);
+            result = byte1 - byte2;
         }
+
+        if (result == 0) {
+            if (pos1 < bytes1.length)
+                result = 1;
+            if (pos2 < bytes2.length)
+                result -= 1;
+        }
+        return result;
+    }
+
+    private static char asciiLowerFold(final char value) {
+        return value >= 65 && value <= 90 ? (char) (value + 0x20) : value;
     }
 
 }

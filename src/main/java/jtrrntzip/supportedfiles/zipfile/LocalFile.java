@@ -7,8 +7,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -39,7 +37,7 @@ import jtrrntzip.supportedfiles.UnsignedTypes;
  *
  * <p>Entry names follow the zip encoding rules: CP437 unless the unicode bit
  * of the entry is set, in which case UTF-8 and the unicode path extra are
- * honored, see {@link #decodeFileName} and {@link #getEncodedFileName}.</p>
+ * honored.</p>
  */
 public final class LocalFile implements Closeable {
 	private long compressedSize;
@@ -67,8 +65,6 @@ public final class LocalFile implements Closeable {
 	private long relativeOffsetOfLocalHeader; // only in central directory
 
 	private boolean zip64;
-
-	private static final Charset CP437 = Charset.forName("Cp437"); //$NON-NLS-1$
 
 	private static final Logger LOGGER = Logger.getLogger(LocalFile.class.getName());
 
@@ -208,16 +204,22 @@ public final class LocalFile implements Closeable {
 
 			final var bFileName = new byte[fileNameLength];
 			esbc.get(bFileName);
-			fileName = decodeFileName(bFileName, getGeneralPurposeBitFlag());
+			fileName = ZipNameCodec.decode(bFileName, getGeneralPurposeBitFlag());
 
 			final var extraField = new byte[extraFieldLength];
 			esbc.get(extraField);
 
 			esbc.position(esbc.position() + fileCommentLength); // File Comments
 
-			ZipReturn extraRet = processExtraField(extraField, extraFieldLength, bFileName);
+			var extraState = new ZipExtraFieldProcessor.ExtraFieldState(zip64, uncompressedSize, compressedSize, relativeOffsetOfLocalHeader, fileName);
+			ZipReturn extraRet = ZipExtraFieldProcessor.processCentralDirectoryExtra(extraField, extraFieldLength, bFileName, extraState);
 			if (extraRet != ZipReturn.ZIPGOOD)
 				return extraRet;
+			zip64 = extraState.zip64;
+			uncompressedSize = extraState.uncompressedSize;
+			compressedSize = extraState.compressedSize;
+			relativeOffsetOfLocalHeader = extraState.relativeOffsetOfLocalHeader;
+			fileName = extraState.fileName;
 
 			return ZipReturn.ZIPGOOD;
 		} catch (Exception e) {
@@ -345,14 +347,17 @@ public final class LocalFile implements Closeable {
 
 			final var bFileName = new byte[fileNameLength];
 			esbc.get(bFileName);
-			String tFileName = decodeFileName(bFileName, generalPurposeBitFlagLocal);
+			String tFileName = ZipNameCodec.decode(bFileName, generalPurposeBitFlagLocal);
 
 			final var extraField = new byte[extraFieldLength];
 			esbc.get(extraField);
 
-			ZipReturn extraRet = processLocalExtraField(extraField, extraFieldLength, tCompressedSize, tUnCompressedSize, bFileName);
+			var extraState = new ZipExtraFieldProcessor.ExtraFieldState(zip64, uncompressedSize, compressedSize, relativeOffsetOfLocalHeader, fileName);
+			ZipReturn extraRet = ZipExtraFieldProcessor.processLocalFileExtra(extraField, extraFieldLength, bFileName, tCompressedSize, tUnCompressedSize, extraState);
 			if (extraRet != ZipReturn.ZIPGOOD)
 				return extraRet;
+			zip64 = extraState.zip64;
+			fileName = extraState.fileName;
 
 			if (!getFileName().equals(tFileName))
 				return ZipReturn.ZIPLOCALFILEHEADERERROR;
@@ -580,96 +585,14 @@ public final class LocalFile implements Closeable {
 	 * general purpose bit flags otherwise.
 	 */
 	private byte[] getEncodedFileName() {
-		if (!CP437.newEncoder().canEncode(getFileName())) {
-			generalPurposeBitFlag = getGeneralPurposeBitFlag() | 1 << 11;
-			return getFileName().getBytes(StandardCharsets.UTF_8);
+		var encoded = ZipNameCodec.encode(getFileName());
+		if (encoded.unicodeFlag()) {
+			generalPurposeBitFlag = getGeneralPurposeBitFlag() | ZipNameCodec.UNICODE_FLAG;
 		}
-		return getFileName().getBytes(CP437);
+		return encoded.bytes();
 	}
 
-	/**
-	 * Decodes an entry name: UTF-8 when the unicode flag is set in the given
-	 * flags, CP437 otherwise.
-	 */
-	private String decodeFileName(byte[] nameBytes, int flags) {
-		return (flags & (1 << 11)) == 0 ? new String(nameBytes, CP437) : new String(nameBytes, StandardCharsets.UTF_8);
-	}
 
-	/**
-	 * Scans the extra field of the central directory record and applies the
-	 * zip64 sizes and offsets and the unicode file name extra; unknown extra
-	 * blocks are skipped.
-	 */
-	private ZipReturn processExtraField(byte[] extraField, int extraFieldLength, byte[] rawFileName) {
-		ByteBuffer bb = ByteBuffer.wrap(extraField).order(ByteOrder.LITTLE_ENDIAN);
-		while (extraFieldLength > bb.position()) {
-			int type = UnsignedTypes.toUShort(bb.getShort());
-			int blockLength = UnsignedTypes.toUShort(bb.getShort());
-			int dataStart = bb.position();
-			switch (type) {
-				case 0x0001:
-					handleZip64Extra(bb);
-					break;
-				case 0x7075:
-					ZipReturn r = handleUnicodeExtra(bb, blockLength, rawFileName, ZipReturn.ZIPCENTRALDIRERROR);
-					if (r != ZipReturn.ZIPGOOD) {
-						return r;
-					}
-					break;
-				default:
-					break;
-			}
-			bb.position(dataStart + blockLength);
-		}
-		return ZipReturn.ZIPGOOD;
-	}
-
-	/**
-	 * Applies the zip64 extra of the central directory: every classic field
-	 * that holds the sentinel value is replaced by its 64-bit value from the
-	 * extra data.
-	 */
-	private void handleZip64Extra(ByteBuffer bb) {
-		zip64 = true;
-		if (getUncompressedSize() == 0xffffffffL)
-			uncompressedSize = bb.getLong();
-		if (compressedSize == 0xffffffffL)
-			compressedSize = bb.getLong();
-		if (getRelativeOffsetOfLocalHeader() == 0xffffffffL)
-			relativeOffsetOfLocalHeader = bb.getLong();
-	}
-
-	/**
-	 * Applies the unicode path extra: the CRC-32 of the raw stored name must
-	 * match the one recorded in the extra, then the entry name is replaced by
-	 * the UTF-8 name the extra carries.
-	 *
-	 * @return the result of the check, {@link ZipReturn#ZIPGOOD} when the
-	 *         extra was applied
-	 */
-	private ZipReturn handleUnicodeExtra(ByteBuffer bb, int blockLength, byte[] rawFileName, ZipReturn mismatchError) {
-		@SuppressWarnings("unused")
-		final byte version = bb.get();
-		final long nameCRC32 = UnsignedTypes.toUInt(bb.getInt());
-
-		final var crcTest = new java.util.zip.CRC32();
-		crcTest.update(rawFileName);
-		final long fCRC = crcTest.getValue();
-
-		if (nameCRC32 != fCRC)
-			return mismatchError;
-
-		if (blockLength < 5)
-			return mismatchError;
-
-		final int charLen = blockLength - 5;
-
-		final var dst = new byte[charLen];
-		bb.get(dst);
-		fileName = new String(dst, StandardCharsets.UTF_8);
-
-		return ZipReturn.ZIPGOOD;
-	}
 
 	/**
 	 * Verifies a size field of the local header against the central directory
@@ -720,59 +643,7 @@ public final class LocalFile implements Closeable {
 		return ZipReturn.ZIPGOOD;
 	}
 
-	/**
-	 * Scans the extra field of the local file header and applies the zip64
-	 * and unicode extras. Unlike {@link #handleZip64Extra}, the zip64 sizes
-	 * are verified against the central directory values instead of replacing
-	 * them.
-	 */
-	private ZipReturn processLocalExtraField(byte[] extraField, int extraFieldLength, long tCompressedSize, long tUnCompressedSize, byte[] rawFileName) {
-		zip64 = false;
-		ByteBuffer bb = ByteBuffer.wrap(extraField).order(ByteOrder.LITTLE_ENDIAN);
-		while (extraFieldLength > bb.position()) {
-			int type = UnsignedTypes.toUShort(bb.getShort());
-			int blockLength = UnsignedTypes.toUShort(bb.getShort());
-			int dataStart = bb.position();
-			switch (type) {
-				case 0x0001:
-					ZipReturn z = handleLocalZip64Extra(bb, tCompressedSize, tUnCompressedSize);
-					if (z != ZipReturn.ZIPGOOD) {
-						return z;
-					}
-					break;
-				case 0x7075:
-					ZipReturn r = handleUnicodeExtra(bb, blockLength, rawFileName, ZipReturn.ZIPLOCALFILEHEADERERROR);
-					if (r != ZipReturn.ZIPGOOD) {
-						return r;
-					}
-					break;
-				default:
-					break;
-			}
-			bb.position(dataStart + blockLength);
-		}
-		return ZipReturn.ZIPGOOD;
-	}
 
-	/**
-	 * Applies and verifies the zip64 extra of the local header: every field
-	 * that holds the sentinel value is read from the extra data and compared
-	 * against the central directory value.
-	 */
-	private ZipReturn handleLocalZip64Extra(ByteBuffer bb, long tCompressedSize, long tUnCompressedSize) {
-		zip64 = true;
-		if (tUnCompressedSize == 0xffffffffL) {
-			final long tLong = bb.getLong();
-			if (tLong != getUncompressedSize())
-				return ZipReturn.ZIPLOCALFILEHEADERERROR;
-		}
-		if (tCompressedSize == 0xffffffffL) {
-			final long tLong = bb.getLong();
-			if (tLong != compressedSize)
-				return ZipReturn.ZIPLOCALFILEHEADERERROR;
-		}
-		return ZipReturn.ZIPGOOD;
-	}
 
 	/**
 	 * Returns the CRC-32 of this entry as the four little endian bytes stored

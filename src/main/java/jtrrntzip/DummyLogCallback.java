@@ -10,6 +10,7 @@ public final class DummyLogCallback implements LogCallback {
      * Creates a callback that ignores all notifications.
      */
     public DummyLogCallback() {
+        // stateless, nothing to initialize
     }
 
     /**

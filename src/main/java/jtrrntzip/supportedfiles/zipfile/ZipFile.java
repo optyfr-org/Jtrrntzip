@@ -53,13 +53,10 @@ public final class ZipFile implements ICompress
 	 * The signature of a central directory file header.
 	 */
 	static final int CENTRALDIRECTORYHEADERSIGNATURE = 0x02014b50;
-	private static final int ENDOFCENTRALDIRSIGNATURE = 0x06054b50;
 	/**
 	 * The signature of a local file header.
 	 */
 	static final int LOCALFILEHEADERSIGNATURE = 0x04034b50;
-	private static final int ZIP64ENDOFCENTRALDIRECTORYLOCATOR = 0x07064b50;
-	private static final int ZIP64ENDOFCENTRALDIRSIGNATURE = 0x06064b50;
 
 	/**
 	 * Creates the parent directories of the file path when they do not exist
@@ -104,22 +101,23 @@ public final class ZipFile implements ICompress
 	 * Creates an unopened archive.
 	 */
 	public ZipFile() {
+		// all fields keep their defaults until open or create is called
 	}
-	private long centerDirSize;
-	private long centerDirStart;
-	private long endOfCenterDir64;
 
 	private EnhancedSeekableByteChannel esbc;
-	private byte[] fileComment;
 	private final List<LocalFile> localFiles = new ArrayList<>();
 
-	private long localFilesCount;
 	private EnumSet<ZipStatus> pZipStatus = EnumSet.noneOf(ZipStatus.class);
 
 	private int readIndex;
-	private boolean zip64;
 
 	private File zipFileInfo = null;
+
+	/**
+	 * End-of-central-directory structures (classic + zip64). Delegates all
+	 * EOCD/zip64-EOCD/locator read/write/find logic.
+	 */
+	private final EndOfCentralDirectory eocd = new EndOfCentralDirectory();
 
 	private final AtomicReference<Deflater> deflater = new AtomicReference<>();
 	private final AtomicReference<Inflater> inflater = new AtomicReference<>();
@@ -166,62 +164,7 @@ public final class ZipFile implements ICompress
 		return localFiles.get(i).getCrc();
 	}
 
-	/**
-	 * Reads the end of central directory record at the current position and
-	 * stores the entry count, the central directory bounds and the file
-	 * comment.
-	 */
-	private final ZipReturn endOfCentralDirRead() throws IOException
-	{
-		final long thisSignature = esbc.getInt();
-		if (thisSignature != ENDOFCENTRALDIRSIGNATURE)
-			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
 
-		int tushort = esbc.getUShort(); // NumberOfThisDisk
-		if (tushort != 0)
-			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
-
-		tushort = esbc.getUShort(); // NumberOfThisDiskCenterDir
-		if (tushort != 0)
-			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
-
-		localFilesCount = esbc.getUShort(); // TotalNumberOfEnteriesDisk
-
-		tushort = esbc.getUShort(); // TotalNumber of entries in the central directory
-		if (tushort != localFilesCount)
-			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
-
-		centerDirSize = esbc.getUInt(); // SizeOfCenteralDir
-		centerDirStart = esbc.getUInt(); // Offset
-
-		int zipFileCommentLength = esbc.getUShort();
-
-		fileComment = new byte[zipFileCommentLength];
-		esbc.get(fileComment);
-
-		if (esbc.position() != esbc.size())
-			pZipStatus.add(ZipStatus.EXTRADATA);
-
-		return ZipReturn.ZIPGOOD;
-	}
-
-	/**
-	 * Writes the end of central directory record at the current position.
-	 */
-	private final void endOfCentralDirWrite() throws IOException
-	{
-		esbc.putUInt(ENDOFCENTRALDIRSIGNATURE);
-		esbc.putUShort(0); // NumberOfThisDisk
-		esbc.putUShort(0); // NumberOfThisDiskCenterDir
-		// 65,535 entries is the largest count a classic EOCD can legally store,
-		// the 0xffff sentinel written for larger counts resolves via the zip64 EOCD
-		esbc.putUShort((localFiles.size() > 0xffff ? 0xffff : localFiles.size())); // TotalNumberOfEnteriesDisk
-		esbc.putUShort((localFiles.size() > 0xffff ? 0xffff : localFiles.size())); // TotalNumber of entries in the central directory
-		esbc.putUInt((centerDirSize >= 0xffffffffL ? 0xffffffffL : centerDirSize)); // SizeOfCenteralDir
-		esbc.putUInt((centerDirStart >= 0xffffffffL ? 0xffffffffL : centerDirStart)); // Offset
-		esbc.putUShort(fileComment.length);
-		esbc.put(fileComment, 0, fileComment.length);
-	}
 
 	@Override
 	/**
@@ -253,47 +196,7 @@ public final class ZipFile implements ICompress
 		return localFiles.get(i).getFileStatus();
 	}
 
-	/**
-	 * Searches the last 64 KiB of the file for the end of central directory
-	 * signature and seeks to the position of the signature.
-	 */
-	private final ZipReturn findEndOfCentralDirSignature() throws IOException
-	{
-		long fileSize = esbc.size();
 
-		var maxBackSearch = 0xffffL;
-
-		if (esbc.size() < maxBackSearch)
-			maxBackSearch = fileSize;
-
-		final var buffSize = 0x400;
-
-		final var buffer = new byte[buffSize + 4];
-
-		long backPosition = 4;
-		while (backPosition < maxBackSearch)
-		{
-			backPosition += buffSize;
-			if (backPosition > maxBackSearch)
-				backPosition = maxBackSearch;
-
-			long readSize = backPosition > (buffSize + 4) ? (buffSize + 4) : backPosition;
-
-			esbc.position(fileSize - backPosition);
-
-			esbc.get(buffer, 0, (int) readSize);
-
-			for (int i = (int) readSize - 4; i >= 0; i--)
-			{
-				if ((buffer[i] != 0x50) || (buffer[i + 1] != 0x4b) || (buffer[i + 2] != 0x05) || (buffer[i + 3] != 0x06))
-					continue;
-
-				esbc.position((fileSize - backPosition) + i);
-				return ZipReturn.ZIPGOOD;
-			}
-		}
-		return ZipReturn.ZIPCENTRALDIRERROR;
-	}
 
 	@Override
 	/**
@@ -330,105 +233,7 @@ public final class ZipFile implements ICompress
 		return localFiles.get(i).getUncompressedSize();
 	}
 
-	/**
-	 * Reads the zip64 end of central directory locator at the current
-	 * position and stores the offset of the zip64 end of central directory
-	 * record.
-	 */
-	private final ZipReturn zip64EndOfCentralDirectoryLocatorRead() throws IOException
-	{
-		zip64 = true;
 
-		final long thisSignature = esbc.getUInt();
-		if (thisSignature != ZIP64ENDOFCENTRALDIRECTORYLOCATOR)
-			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
-
-		long tuint = esbc.getUInt(); // number of the disk with the start of the zip64 end of centeral directory
-		if (tuint != 0)
-			return ZipReturn.ZIP64ENDOFCENTRALDIRECTORYLOCATORERROR;
-
-		endOfCenterDir64 = esbc.getULong(); // relative offset of the zip64 end of central directroy record
-
-		tuint = esbc.getUInt(); // total number of disks
-		if (tuint != 1)
-			return ZipReturn.ZIP64ENDOFCENTRALDIRECTORYLOCATORERROR;
-
-		return ZipReturn.ZIPGOOD;
-	}
-
-	/**
-	 * Writes the zip64 end of central directory locator pointing at the
-	 * stored zip64 end of central directory offset.
-	 */
-	private final void zip64EndOfCentralDirectoryLocatorWrite() throws IOException
-	{
-		esbc.putInt(ZIP64ENDOFCENTRALDIRECTORYLOCATOR);
-		esbc.putUInt(0); // number of the disk with the start of the zip64 end of centeral directory
-		esbc.putULong(endOfCenterDir64); // relative offset of the zip64 end of central directroy record
-		esbc.putUInt(1); // total number of disks
-	}
-
-	/**
-	 * Reads the zip64 end of central directory record at the current position
-	 * and replaces the entry count and the central directory bounds with the
-	 * 64-bit values.
-	 */
-	private final ZipReturn zip64EndOfCentralDirRead() throws IOException
-	{
-		zip64 = true;
-
-		final long thisSignature = esbc.getInt();
-		if (thisSignature != ZIP64ENDOFCENTRALDIRSIGNATURE)
-			return ZipReturn.ZIPENDOFCENTRALDIRECTORYERROR;
-
-		long tulong = esbc.getULong(); // Size of zip64 end of central directory record
-		if (tulong != 44)
-			return ZipReturn.ZIP64ENDOFCENTRALDIRERROR;
-
-		esbc.getShort(); // version made by
-
-		int tushort = esbc.getUShort(); // version needed to extract
-		if (tushort != 45)
-			return ZipReturn.ZIP64ENDOFCENTRALDIRERROR;
-
-		long tuint = esbc.getUInt(); // number of this disk
-		if (tuint != 0)
-			return ZipReturn.ZIP64ENDOFCENTRALDIRERROR;
-
-		tuint = esbc.getUInt(); // number of the disk with the start of the central directory
-		if (tuint != 0)
-			return ZipReturn.ZIP64ENDOFCENTRALDIRERROR;
-
-		localFilesCount = esbc.getULong(); // total number of entries in the central directory on this disk
-
-		tulong = esbc.getULong(); // total number of entries in the central directory
-		if (tulong != localFilesCount)
-			return ZipReturn.ZIP64ENDOFCENTRALDIRERROR;
-
-		centerDirSize = esbc.getULong(); // size of central directory
-
-		centerDirStart = esbc.getULong(); // offset of start of central directory with respect to the starting disk number
-
-		return ZipReturn.ZIPGOOD;
-	}
-
-	/**
-	 * Writes the zip64 end of central directory record at the current
-	 * position.
-	 */
-	private final void zip64EndOfCentralDirWrite() throws IOException
-	{
-		esbc.putInt(ZIP64ENDOFCENTRALDIRSIGNATURE);
-		esbc.putULong(44L); // Size of zip64 end of central directory record
-		esbc.putUShort(45); // version made by
-		esbc.putUShort(45); // version needed to extract
-		esbc.putUInt(0); // number of this disk
-		esbc.putUInt(0); // number of the disk with the start of the central directroy
-		esbc.putULong(localFiles.size()); // total number of entries in the central directory on this disk
-		esbc.putULong(localFiles.size()); // total number of entries in the central directory
-		esbc.putULong(centerDirSize); // size of central directory
-		esbc.putULong(centerDirStart); // offset of start of central directory with respect to the starting disk number
-	}
 
 	@Override
 	/**
@@ -450,6 +255,7 @@ public final class ZipFile implements ICompress
 		{
 			case CLOSED ->
 			{
+				// nothing to close, the archive was never opened or is already closed
 			}
 			case OPENREAD ->
 			{
@@ -458,35 +264,35 @@ public final class ZipFile implements ICompress
 			}
 			case OPENWRITE ->
 			{
-				zip64 = false;
+				eocd.zip64 = false;
 				var lTrrntzip = true;
 
-				centerDirStart = esbc.position();
-				if (centerDirStart >= 0xffffffffL)
-					zip64 = true;
+				eocd.centerDirStart = esbc.position();
+				if (eocd.centerDirStart >= 0xffffffffL)
+					eocd.zip64 = true;
 				if (localFiles.size() > 0xffff)
-					zip64 = true;
+					eocd.zip64 = true;
 
 				esbc.startChecksum();
 				for (final LocalFile t : localFiles)
 				{
 					t.centralDirectoryWrite(esbc);
-					zip64 |= t.isZip64();
+					eocd.zip64 |= t.isZip64();
 					lTrrntzip &= t.isTrrntZip();
 				}
 
-				centerDirSize = esbc.position() - centerDirStart;
+				eocd.centerDirSize = esbc.position() - eocd.centerDirStart;
 
-				fileComment = lTrrntzip ? ("TORRENTZIPPED-" + HexFormat.of().withUpperCase().toHexDigits((int) esbc.endChecksum())).getBytes(StandardCharsets.US_ASCII) : new byte[0]; //$NON-NLS-1$
+				eocd.fileComment = lTrrntzip ? ("TORRENTZIPPED-" + HexFormat.of().withUpperCase().toHexDigits((int) esbc.endChecksum())).getBytes(StandardCharsets.US_ASCII) : new byte[0]; //$NON-NLS-1$
 				pZipStatus = lTrrntzip ? EnumSet.of(ZipStatus.TRRNTZIP) : EnumSet.noneOf(ZipStatus.class);
 
-				if (zip64)
+				if (eocd.zip64)
 				{
-					endOfCenterDir64 = esbc.position();
-					zip64EndOfCentralDirWrite();
-					zip64EndOfCentralDirectoryLocatorWrite();
+					eocd.endOfCenterDir64 = esbc.position();
+					eocd.writeZip64Record(esbc, localFiles.size());
+					eocd.writeZip64Locator(esbc);
 				}
-				endOfCentralDirWrite();
+				eocd.write(esbc, localFiles.size());
 
 				esbc.truncate(esbc.position());
 				close();
@@ -512,6 +318,7 @@ public final class ZipFile implements ICompress
 		{
 			case CLOSED ->
 			{
+				// nothing to close, the archive was never opened or is already closed
 			}
 			case OPENREAD ->
 			{
@@ -624,9 +431,9 @@ public final class ZipFile implements ICompress
 	{
 		zipFileClose();
 		pZipStatus = EnumSet.noneOf(ZipStatus.class);
-		zip64 = false;
-		centerDirStart = 0;
-		centerDirSize = 0;
+		eocd.zip64 = false;
+		eocd.centerDirStart = 0;
+		eocd.centerDirSize = 0;
 		zipFileInfo = null;
 
 		try
@@ -656,20 +463,22 @@ public final class ZipFile implements ICompress
 
 		try
 		{
-			ZipReturn zRet = findEndOfCentralDirSignature();
+			ZipReturn zRet = eocd.findSignature(esbc);
 			if (zRet != ZipReturn.ZIPGOOD)
 				return fail(zRet);
 
 			long endOfCentralDir = esbc.position();
-			zRet = endOfCentralDirRead();
+			zRet = eocd.read(esbc);
+			if (zRet != ZipReturn.ZIPGOOD)
+				return fail(zRet);
+			if (eocd.extraDataPresent)
+				pZipStatus.add(ZipStatus.EXTRADATA);
+
+			zRet = eocd.readZip64StructuresIfNeeded(esbc, endOfCentralDir);
 			if (zRet != ZipReturn.ZIPGOOD)
 				return fail(zRet);
 
-			zRet = readZip64StructuresIfNeeded(endOfCentralDir);
-			if (zRet != ZipReturn.ZIPGOOD)
-				return fail(zRet);
-
-			boolean trrntzip = isTorrentZipped();
+			boolean trrntzip = eocd.isTorrentZipped(esbc);
 
 			zRet = readCentralDirectoryEntries();
 			if (zRet != ZipReturn.ZIPGOOD)
@@ -703,7 +512,7 @@ public final class ZipFile implements ICompress
 	 */
 	private final boolean isTorrentZipFileOrderValid()
 	{
-		for (var i = 0; i < localFilesCount - 1; i++)
+		for (var i = 0; i < localFiles.size() - 1; i++)
 		{
 			if (TorrentZipCheck.trrntZipStringCompare(localFiles.get(i).getFileName(), localFiles.get(i + 1).getFileName()) >= 0)
 			{
@@ -719,7 +528,7 @@ public final class ZipFile implements ICompress
 	 */
 	private final boolean hasNoUnnecessaryDirectoryEntries()
 	{
-		for (var i = 0; i < localFilesCount - 1; i++)
+		for (var i = 0; i < localFiles.size() - 1; i++)
 		{
 			if (TorrentZipCheck.isUnnecessaryDirectoryEntry(localFiles.get(i).getFileName(), localFiles.get(i + 1).getFileName()))
 			{
@@ -730,77 +539,13 @@ public final class ZipFile implements ICompress
 	}
 
 	/**
-	 * Follows the zip64 structures when the classic record stores sentinel
-	 * values.
-	 *
-	 * <p>The count sentinel 0xffff can legally be a literal count, so the
-	 * zip64 path is taken only when a size sentinel stored by the classic
-	 * record or an actually present zip64 locator requires it.</p>
-	 */
-	private final ZipReturn readZip64StructuresIfNeeded(long endOfCentralDir) throws IOException
-	{
-		final boolean sizeSentinel = centerDirStart == 0xffffffffL || centerDirSize == 0xffffffffL;
-		final boolean countSentinel = localFilesCount == 0xffff;
-		if (sizeSentinel || countSentinel)
-		{
-			// the classic EOCD may legally store the literal count 65,535, so the
-			// zip64 path is only taken when the locator is actually present
-			if (countSentinel && !sizeSentinel && !hasZip64Locator(endOfCentralDir))
-				return ZipReturn.ZIPGOOD;
-			zip64 = true;
-			esbc.position(endOfCentralDir - 20);
-			ZipReturn zRet = zip64EndOfCentralDirectoryLocatorRead();
-			if (zRet != ZipReturn.ZIPGOOD)
-				return zRet;
-			esbc.position(endOfCenterDir64);
-			zRet = zip64EndOfCentralDirRead();
-			if (zRet != ZipReturn.ZIPGOOD)
-				return zRet;
-		}
-		return ZipReturn.ZIPGOOD;
-	}
-
-	/**
-	 * Tells if a zip64 locator sits directly in front of the end of central
-	 * directory record.
-	 */
-	private final boolean hasZip64Locator(long endOfCentralDir) throws IOException
-	{
-		esbc.position(endOfCentralDir - 20);
-		return esbc.getUInt() == ZIP64ENDOFCENTRALDIRECTORYLOCATOR;
-	}
-
-	/**
-	 * Verifies the torrentzip file comment against the central directory.
-	 *
-	 * <p>The comment must be {@code TORRENTZIPPED-XXXXXXXX} and its hex
-	 * value must equal the CRC-32 of the central directory bytes.</p>
-	 */
-	private final boolean isTorrentZipped() throws IOException
-	{
-		if (fileComment.length == 22 && new String(fileComment, StandardCharsets.US_ASCII).substring(0, 14).equals("TORRENTZIPPED-")) //$NON-NLS-1$ //$NON-NLS-2$
-		{
-			final var buffer = new byte[(int) centerDirSize];
-			esbc.position(centerDirStart);
-			esbc.startChecksum();
-			esbc.get(buffer);
-			long r = esbc.endChecksum();
-			final var tcrc = new String(fileComment, StandardCharsets.US_ASCII).substring(14, 22); //$NON-NLS-1$ //$NON-NLS-2$
-			final var zcrc = HexFormat.of().withUpperCase().toHexDigits((int) r);
-			if (tcrc.equals(zcrc))
-				return true;
-		}
-		return false;
-	}
-
-	/**
 	 * Reads the central directory entries between the stored bounds.
 	 */
 	private final ZipReturn readCentralDirectoryEntries() throws IOException
 	{
-		esbc.position(centerDirStart);
+		esbc.position(eocd.centerDirStart);
 		localFiles.clear();
-		for (var i = 0; i < localFilesCount; i++)
+		for (var i = 0; i < eocd.localFilesCount; i++)
 		{
 			final var lc = new LocalFile(esbc);
 			ZipReturn zRet = lc.centralDirectoryRead();
@@ -809,7 +554,7 @@ public final class ZipFile implements ICompress
 				lc.close();
 				return zRet;
 			}
-			zip64 |= lc.isZip64();
+			eocd.zip64 |= lc.isZip64();
 			localFiles.add(lc);
 		}
 		return ZipReturn.ZIPGOOD;
@@ -827,9 +572,9 @@ public final class ZipFile implements ICompress
 	 * Reads and verifies the local file header of every entry, updating the
 	 * torrentzip state of the entries along the way.
 	 */
-	private final LocalHeaderScan readLocalFileHeaders(boolean trrntzip) throws IOException
+	private final LocalHeaderScan readLocalFileHeaders(boolean trrntzip)
 	{
-		for (var i = 0; i < localFilesCount; i++)
+		for (var i = 0; i < eocd.localFilesCount; i++)
 		{
 			ZipReturn zRet = localFiles.get(i).localFileHeaderRead();
 			if (zRet != ZipReturn.ZIPGOOD)
