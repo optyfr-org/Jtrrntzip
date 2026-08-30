@@ -5,14 +5,13 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.io.FilenameUtils;
 
-public final class Program implements LogCallback, TorrentZipOptions {
+public final class Program implements LogCallback {
     static final int EXIT_OK = 0;
     static final int EXIT_FAILED = 1;
     static final int EXIT_USAGE = 2;
@@ -38,20 +37,23 @@ public final class Program implements LogCallback, TorrentZipOptions {
     }
 
     int run() {
-        switch (options.info()) {
-            case HELP:
+        final var infoHandled = switch (options.info()) {
+            case HELP -> {
                 new HelpPrinter(specificationVersion()).printTo(System.out); // NOSONAR
-                return EXIT_OK;
-            case VERSION:
+                yield true;
+            }
+            case VERSION -> {
                 System.out.format("TorrentZip v%s", specificationVersion()); // NOSONAR
-                return EXIT_OK;
-            case NONE:
-                break;
-        }
+                yield true;
+            }
+            case NONE -> false;
+        };
+        if (infoHandled)
+            return EXIT_OK;
 
         var failures = 0;
         if (!options.argfiles().isEmpty()) {
-            tz = new TorrentZip(this, this);
+            tz = new TorrentZip(this, new SimpleTorrentZipOptions(options.forceReZip(), options.checkOnly()));
             for (final File argfile : options.argfiles()) {
                 // first check if arg is a directory
                 if (argfile.isDirectory()) {
@@ -111,11 +113,11 @@ public final class Program implements LogCallback, TorrentZipOptions {
 
         String dir = argfile.getParent();
         if (dir == null)
-            dir = Paths.get(".").toAbsolutePath().normalize().toString();
+            dir = Path.of(".").toAbsolutePath().normalize().toString();
 
         final String filename = argfile.getName();
 
-        try (DirectoryStream<Path> dirStream = openDirectoryStream(Paths.get(dir), filename)) {
+        try (DirectoryStream<Path> dirStream = openDirectoryStream(Path.of(dir), filename)) {
             var failures = 0;
             for (final Path path : dirStream) {
                 final String ext = FilenameUtils.getExtension(path.getFileName().toString());
@@ -174,16 +176,6 @@ public final class Program implements LogCallback, TorrentZipOptions {
 
     private static String describe(final IOException e) {
         return e.getMessage() == null ? e.toString() : e.getMessage();
-    }
-
-    @Override
-    public final boolean isForceRezip() {
-        return options.forceReZip();
-    }
-
-    @Override
-    public final boolean isCheckOnly() {
-        return options.checkOnly();
     }
 
     @Override

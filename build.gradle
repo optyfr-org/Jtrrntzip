@@ -46,7 +46,6 @@ application {
 }
 
 dependencies {
-    implementation libs.commons.codec
     implementation libs.commons.io
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit.jupiter

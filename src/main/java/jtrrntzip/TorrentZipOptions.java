@@ -1,6 +1,6 @@
 package jtrrntzip;
 
-public interface TorrentZipOptions {
+public sealed interface TorrentZipOptions permits SimpleTorrentZipOptions {
     boolean isForceRezip();
 
     boolean isCheckOnly();

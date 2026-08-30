@@ -9,10 +9,11 @@ import java.io.OutputStream;
 import jtrrntzip.ZipOpenType;
 import jtrrntzip.ZipReturn;
 import jtrrntzip.ZipStatus;
+import jtrrntzip.supportedfiles.zipfile.ZipFile;
 
 import java.util.EnumSet;
 
-public interface ICompress extends Closeable {
+public sealed interface ICompress extends Closeable permits ZipFile {
 
     record OpenedReadStream(ZipReturn status, InputStream stream, long size, int compressionMethod) {
         public static OpenedReadStream failed(final ZipReturn status) {

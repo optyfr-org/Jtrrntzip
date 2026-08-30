@@ -90,13 +90,7 @@ public final class TorrentZip {
     private final List<ZippedFile> readZipContent(final ZipFile zipFile) {
         final List<ZippedFile> zippedFiles = new ArrayList<>();
         for (var i = 0; i < zipFile.localFilesCount(); i++) {
-            final int ii = i;
-            final var zf = new ZippedFile();
-            zf.setIndex(ii);
-            zf.setName(zipFile.filename(ii));
-            zf.setCRC(zipFile.crc32(ii));
-            zf.setSize(zipFile.uncompressedSize(ii));
-            zippedFiles.add(zf);
+            zippedFiles.add(new ZippedFile(i, zipFile.filename(i), zipFile.uncompressedSize(i), ZippedFile.crcFromLe(zipFile.crc32(i))));
         }
         return zippedFiles;
     }

@@ -316,24 +316,21 @@ public final class LocalFile implements Closeable {
 	public final ICompress.OpenedReadStream localFileOpenReadStream(boolean raw, AtomicReference<Inflater> inflater) throws IOException {
 		esbc.position(dataLocation);
 
-		switch (compressionMethod) {
-			case 8:
-			{
+		// compressionMethod 8 (deflate) gets an inflating stream, stored and unknown
+		// methods fall back to a raw bounded stream over the stored data
+		return switch (compressionMethod) {
+			case 8 -> {
 				if (raw)
-					return new ICompress.OpenedReadStream(ZipReturn.ZIPGOOD, boundedZipStream(), compressedSize, compressionMethod);
+					yield new ICompress.OpenedReadStream(ZipReturn.ZIPGOOD, boundedZipStream(), compressedSize, compressionMethod);
 
 				if (inflater.get() == null)
 					inflater.set(new Inflater(true));
 				else
 					inflater.get().reset();
-				return new ICompress.OpenedReadStream(ZipReturn.ZIPGOOD, new InflaterInputStream(esbc.getInputStream(), inflater.get()), getUncompressedSize(), compressionMethod);
+				yield new ICompress.OpenedReadStream(ZipReturn.ZIPGOOD, new InflaterInputStream(esbc.getInputStream(), inflater.get()), getUncompressedSize(), compressionMethod);
 			}
-			default:
-			case 0:
-			{
-				return new ICompress.OpenedReadStream(ZipReturn.ZIPGOOD, boundedZipStream(), compressedSize, compressionMethod);
-			}
-		}
+			default -> new ICompress.OpenedReadStream(ZipReturn.ZIPGOOD, boundedZipStream(), compressedSize, compressionMethod);
+		};
 	}
 
 	public final ICompress.OpenedWriteStream localFileOpenWriteStream(boolean raw, boolean tZip, long uSize, int cMethod, AtomicReference<Deflater> deflater) throws IOException {

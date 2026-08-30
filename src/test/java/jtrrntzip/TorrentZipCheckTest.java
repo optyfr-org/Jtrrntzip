@@ -4,8 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -48,8 +46,8 @@ class TorrentZipCheckTest {
         assertTrue(status.contains(TrrntZipStatus.REPEATFILESFOUND));
         assertFalse(status.contains(TrrntZipStatus.CORRUPTZIP));
         assertEquals(2, zippedFiles.size());
-        assertEquals("a.txt", zippedFiles.get(0).getName());
-        assertEquals("b.txt", zippedFiles.get(1).getName());
+        assertEquals("a.txt", zippedFiles.get(0).name());
+        assertEquals("b.txt", zippedFiles.get(1).name());
     }
 
     @Test
@@ -78,8 +76,8 @@ class TorrentZipCheckTest {
         assertTrue(status.contains(TrrntZipStatus.REPEATFILESFOUND));
         assertFalse(status.contains(TrrntZipStatus.CORRUPTZIP));
         assertEquals(2, zippedFiles.size());
-        assertEquals("a.txt", zippedFiles.get(0).getName());
-        assertEquals("z.txt", zippedFiles.get(1).getName());
+        assertEquals("a.txt", zippedFiles.get(0).name());
+        assertEquals("z.txt", zippedFiles.get(1).name());
     }
 
     @Test
@@ -102,14 +100,14 @@ class TorrentZipCheckTest {
             zippedFiles.add(zippedFile(name, 1, 1));
 
         final var expected = new ArrayList<>(zippedFiles);
-        expected.sort(Comparator.comparing(ZippedFile::getName, TorrentZipCheck::trrntZipStringCompare));
+        expected.sort(Comparator.comparing(ZippedFile::name, TorrentZipCheck::trrntZipStringCompare));
 
         final var status = TorrentZipCheck.checkZipFiles(zippedFiles, new DummyLogCallback());
 
         assertTrue(status.contains(TrrntZipStatus.UNSORTED), "unsorted input must be flagged");
         assertEquals(expected.size(), zippedFiles.size());
         for (var i = 0; i < expected.size(); i++)
-            assertEquals(expected.get(i).getName(), zippedFiles.get(i).getName(),
+            assertEquals(expected.get(i).name(), zippedFiles.get(i).name(),
                     "order must match the shared comparator at index " + i);
     }
 
@@ -125,7 +123,7 @@ class TorrentZipCheckTest {
         assertFalse(status.contains(TrrntZipStatus.UNSORTED), "sorted input must not be flagged");
         assertEquals(names.size(), zippedFiles.size());
         for (var i = 0; i < names.size(); i++)
-            assertEquals(names.get(i), zippedFiles.get(i).getName());
+            assertEquals(names.get(i), zippedFiles.get(i).name());
     }
 
     @Test
@@ -137,8 +135,8 @@ class TorrentZipCheckTest {
 
         final var status = TorrentZipCheck.checkZipFiles(zippedFiles, new DummyLogCallback());
 
-        assertEquals("AB", zippedFiles.get(0).getName(), "fold-equal names must keep their original relative order");
-        assertEquals("ab", zippedFiles.get(1).getName());
+        assertEquals("AB", zippedFiles.get(0).name(), "fold-equal names must keep their original relative order");
+        assertEquals("ab", zippedFiles.get(1).name());
     }
 
     @Test
@@ -162,15 +160,11 @@ class TorrentZipCheckTest {
 
         assertTrue(status.contains(TrrntZipStatus.EXTRADIRECTORYENTRIES));
         assertEquals(2, zippedFiles.size());
-        assertEquals("dir/file.txt", zippedFiles.get(0).getName());
-        assertEquals("keep/", zippedFiles.get(1).getName());
+        assertEquals("dir/file.txt", zippedFiles.get(0).name());
+        assertEquals("keep/", zippedFiles.get(1).name());
     }
 
     private static ZippedFile zippedFile(final String name, final int crc, final long size) {
-        final var zippedFile = new ZippedFile();
-        zippedFile.setName(name);
-        zippedFile.setCRC(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(crc).array());
-        zippedFile.setSize(size);
-        return zippedFile;
+        return new ZippedFile(0, name, size, crc);
     }
 }

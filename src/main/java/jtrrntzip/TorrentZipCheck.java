@@ -10,7 +10,7 @@ public class TorrentZipCheck {
         throw new IllegalStateException("Utility class");
     }
 
-    private static final Comparator<ZippedFile> TRRNT_ZIP_NAME_ORDER = Comparator.comparing(ZippedFile::getName, TorrentZipCheck::trrntZipStringCompare);
+    private static final Comparator<ZippedFile> TRRNT_ZIP_NAME_ORDER = Comparator.comparing(ZippedFile::name, TorrentZipCheck::trrntZipStringCompare);
 
     public static Set<TrrntZipStatus> checkZipFiles(final List<ZippedFile> zippedFiles, final LogCallback statusLogCallBack) {
         final EnumSet<TrrntZipStatus> tzStatus = EnumSet.noneOf(TrrntZipStatus.class);
@@ -29,22 +29,16 @@ public class TorrentZipCheck {
     // return BadDirectorySeparator if errors found.
     private static void fixBackslashSeparators(final List<ZippedFile> zippedFiles, final EnumSet<TrrntZipStatus> tzStatus, final LogCallback statusLogCallBack) {
         var errorFound = false;
-        for (final ZippedFile t : zippedFiles) {
-            final char[] bytes = t.getName().toCharArray();
-            var fixDir = false;
-            for (var j = 0; j < bytes.length; j++) {
-                if (bytes[j] != '\\')
-                    continue;
-                fixDir = true;
-                bytes[j] = '/';
-                tzStatus.add(TrrntZipStatus.BADDIRECTORYSEPARATOR);
-                if (!errorFound && statusLogCallBack.isVerboseLogging()) {
-                    errorFound = true;
-                    statusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.IncorrectDirectorySeparatoreFound")); //$NON-NLS-1$
-                }
+        for (var i = 0; i < zippedFiles.size(); i++) {
+            final ZippedFile t = zippedFiles.get(i);
+            if (t.name().indexOf('\\') < 0)
+                continue;
+            zippedFiles.set(i, t.withName(t.name().replace('\\', '/')));
+            tzStatus.add(TrrntZipStatus.BADDIRECTORYSEPARATOR);
+            if (!errorFound && statusLogCallBack.isVerboseLogging()) {
+                errorFound = true;
+                statusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.IncorrectDirectorySeparatoreFound")); //$NON-NLS-1$
             }
-            if (fixDir)
-                t.setName(new String(bytes));
         }
     }
 
@@ -56,7 +50,7 @@ public class TorrentZipCheck {
     // return Unsorted if errors found.
     private static void sortIfNeeded(final List<ZippedFile> zippedFiles, final EnumSet<TrrntZipStatus> tzStatus, final LogCallback statusLogCallBack) {
         for (var i = 0; i < zippedFiles.size() - 1; i++) {
-            if (trrntZipStringCompare(zippedFiles.get(i).getName(), zippedFiles.get(i + 1).getName()) > 0) {
+            if (trrntZipStringCompare(zippedFiles.get(i).name(), zippedFiles.get(i + 1).name()) > 0) {
                 zippedFiles.sort(TRRNT_ZIP_NAME_ORDER);
                 tzStatus.add(TrrntZipStatus.UNSORTED);
                 if (statusLogCallBack.isVerboseLogging())
@@ -78,7 +72,7 @@ public class TorrentZipCheck {
     private static void removeUnneededDirectoryMarkers(final List<ZippedFile> zippedFiles, final EnumSet<TrrntZipStatus> tzStatus, final LogCallback statusLogCallBack) {
         var errorFound = false;
         for (var i = 0; i < zippedFiles.size() - 1; i++) {
-            if (!isUnnecessaryDirectoryEntry(zippedFiles.get(i).getName(), zippedFiles.get(i + 1).getName()))
+            if (!isUnnecessaryDirectoryEntry(zippedFiles.get(i).name(), zippedFiles.get(i + 1).name()))
                 continue;
 
             // we found an incorrect directory so remove it.
@@ -102,7 +96,7 @@ public class TorrentZipCheck {
         for (var i = 0; i < zippedFiles.size() - 1; i++) {
             final var a = zippedFiles.get(i);
             final var b = zippedFiles.get(i + 1);
-            if (!a.getName().equals(b.getName()))
+            if (!a.name().equals(b.name()))
                 continue;
 
             tzStatus.add(TrrntZipStatus.REPEATFILESFOUND);
@@ -111,7 +105,7 @@ public class TorrentZipCheck {
                 statusLogCallBack.statusLogCallBack(Messages.getString("TorrentZipCheck.DuplicateFileEntriesFound")); //$NON-NLS-1$
             }
 
-            if (a.getCrc() == b.getCrc() && a.getSize() == b.getSize()) {
+            if (a.crc() == b.crc() && a.size() == b.size()) {
                 zippedFiles.remove(i + 1);
                 i--;
             } else {

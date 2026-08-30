@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.Deflater;
@@ -38,50 +39,22 @@ public final class ZipFile implements ICompress
 
 	public static final String zipErrorMessageText(ZipReturn zS)
 	{
-		final String ret;
-		switch (zS)
+		return switch (zS)
 		{
-			case ZIPGOOD:
-				ret = Messages.getString("ZipFile.ZIPGood"); //$NON-NLS-1$
-				break;
-			case ZIPFILECOUNTERROR:
-				ret = Messages.getString("ZipFile.ZIPFileCountError"); //$NON-NLS-1$
-				break;
-			case ZIPSIGNATUREERROR:
-				ret = Messages.getString("ZipFile.ZipSignatureError"); //$NON-NLS-1$
-				break;
-			case ZIPEXTRADATAONENDOFZIP:
-				ret = Messages.getString("ZipFile.ZipExtraDataOnEndOfZip"); //$NON-NLS-1$
-				break;
-			case ZIPUNSUPPORTEDCOMPRESSION:
-				ret = Messages.getString("ZipFile.ZipUnsipportedCompression"); //$NON-NLS-1$
-				break;
-			case ZIPLOCALFILEHEADERERROR:
-				ret = Messages.getString("ZipFile.ZipLocalFileHeaderError"); //$NON-NLS-1$
-				break;
-			case ZIPCENTRALDIRERROR:
-				ret = Messages.getString("ZipFile.ZipCentralDirError"); //$NON-NLS-1$
-				break;
-			case ZIPREADINGFROMOUTPUTFILE:
-				ret = Messages.getString("ZipFile.ZipReadingFromOutputFile"); //$NON-NLS-1$
-				break;
-			case ZIPWRITINGTOINPUTFILE:
-				ret = Messages.getString("ZipFile.ZipWritingToInputFile"); //$NON-NLS-1$
-				break;
-			case ZIPERRORGETTINGDATASTREAM:
-				ret = Messages.getString("ZipFile.ZipErrorGettingDataStream"); //$NON-NLS-1$
-				break;
-			case ZIPCRCDECODEERROR:
-				ret = Messages.getString("ZipFile.ZipCRCDecodeError"); //$NON-NLS-1$
-				break;
-			case ZIPDECODEERROR:
-				ret = Messages.getString("ZipFile.ZipDecodeError"); //$NON-NLS-1$
-				break;
-			default:
-				ret = zS.toString();
-				break;
-		}
-		return ret;
+			case ZIPGOOD -> Messages.getString("ZipFile.ZIPGood"); //$NON-NLS-1$
+			case ZIPFILECOUNTERROR -> Messages.getString("ZipFile.ZIPFileCountError"); //$NON-NLS-1$
+			case ZIPSIGNATUREERROR -> Messages.getString("ZipFile.ZipSignatureError"); //$NON-NLS-1$
+			case ZIPEXTRADATAONENDOFZIP -> Messages.getString("ZipFile.ZipExtraDataOnEndOfZip"); //$NON-NLS-1$
+			case ZIPUNSUPPORTEDCOMPRESSION -> Messages.getString("ZipFile.ZipUnsipportedCompression"); //$NON-NLS-1$
+			case ZIPLOCALFILEHEADERERROR -> Messages.getString("ZipFile.ZipLocalFileHeaderError"); //$NON-NLS-1$
+			case ZIPCENTRALDIRERROR -> Messages.getString("ZipFile.ZipCentralDirError"); //$NON-NLS-1$
+			case ZIPREADINGFROMOUTPUTFILE -> Messages.getString("ZipFile.ZipReadingFromOutputFile"); //$NON-NLS-1$
+			case ZIPWRITINGTOINPUTFILE -> Messages.getString("ZipFile.ZipWritingToInputFile"); //$NON-NLS-1$
+			case ZIPERRORGETTINGDATASTREAM -> Messages.getString("ZipFile.ZipErrorGettingDataStream"); //$NON-NLS-1$
+			case ZIPCRCDECODEERROR -> Messages.getString("ZipFile.ZIPCRCDecodeError"); //$NON-NLS-1$
+			case ZIPDECODEERROR -> Messages.getString("ZipFile.ZipDecodeError"); //$NON-NLS-1$
+			default -> zS.toString();
+		};
 	}
 
 	private long centerDirSize;
@@ -333,69 +306,76 @@ public final class ZipFile implements ICompress
 	@Override
 	public final void zipFileClose() throws IOException
 	{
-		if (zipOpen == ZipOpenType.CLOSED)
-			return;
-
-		if (zipOpen == ZipOpenType.OPENREAD)
+		switch (zipOpen)
 		{
-			close();
-			zipOpen = ZipOpenType.CLOSED;
-			return;
+			case CLOSED ->
+			{
+			}
+			case OPENREAD ->
+			{
+				close();
+				zipOpen = ZipOpenType.CLOSED;
+			}
+			case OPENWRITE ->
+			{
+				zip64 = false;
+				var lTrrntzip = true;
+
+				centerDirStart = esbc.position();
+				if (centerDirStart >= 0xffffffffL)
+					zip64 = true;
+				if (localFiles.size() > 0xffff)
+					zip64 = true;
+
+				esbc.startChecksum();
+				for (final LocalFile t : localFiles)
+				{
+					t.centralDirectoryWrite(esbc);
+					zip64 |= t.isZip64();
+					lTrrntzip &= t.isTrrntZip();
+				}
+
+				centerDirSize = esbc.position() - centerDirStart;
+
+				fileComment = lTrrntzip ? ("TORRENTZIPPED-" + HexFormat.of().withUpperCase().toHexDigits((int) esbc.endChecksum())).getBytes(StandardCharsets.US_ASCII) : new byte[0]; //$NON-NLS-1$
+				pZipStatus = lTrrntzip ? EnumSet.of(ZipStatus.TRRNTZIP) : EnumSet.noneOf(ZipStatus.class);
+
+				if (zip64)
+				{
+					endOfCenterDir64 = esbc.position();
+					zip64EndOfCentralDirWrite();
+					zip64EndOfCentralDirectoryLocatorWrite();
+				}
+				endOfCentralDirWrite();
+
+				esbc.truncate(esbc.position());
+				close();
+				zipOpen = ZipOpenType.CLOSED;
+			}
 		}
-
-		zip64 = false;
-		var lTrrntzip = true;
-
-		centerDirStart = esbc.position();
-		if (centerDirStart >= 0xffffffffL)
-			zip64 = true;
-		if (localFiles.size() > 0xffff)
-			zip64 = true;
-
-		esbc.startChecksum();
-		for (final LocalFile t : localFiles)
-		{
-			t.centralDirectoryWrite(esbc);
-			zip64 |= t.isZip64();
-			lTrrntzip &= t.isTrrntZip();
-		}
-
-		centerDirSize = esbc.position() - centerDirStart;
-
-		fileComment = lTrrntzip ? String.format("TORRENTZIPPED-%08X", esbc.endChecksum()).getBytes(StandardCharsets.US_ASCII) : new byte[0]; //$NON-NLS-1$ //$NON-NLS-2$
-		pZipStatus = lTrrntzip ? EnumSet.of(ZipStatus.TRRNTZIP) : EnumSet.noneOf(ZipStatus.class);
-
-		if (zip64)
-		{
-			endOfCenterDir64 = esbc.position();
-			zip64EndOfCentralDirWrite();
-			zip64EndOfCentralDirectoryLocatorWrite();
-		}
-		endOfCentralDirWrite();
-
-		esbc.truncate(esbc.position());
-		close();
-		zipOpen = ZipOpenType.CLOSED;
-
 	}
 
 	@Override
 	public final void zipFileCloseFailed() throws IOException
 	{
-		if (zipOpen == ZipOpenType.CLOSED)
-			return;
-
-		if (zipOpen == ZipOpenType.OPENREAD)
+		switch (zipOpen)
 		{
-			close();
-			zipOpen = ZipOpenType.CLOSED;
-			return;
+			case CLOSED ->
+			{
+			}
+			case OPENREAD ->
+			{
+				close();
+				zipOpen = ZipOpenType.CLOSED;
+			}
+			case OPENWRITE ->
+			{
+				close();
+				Files.deleteIfExists(zipFileInfo.toPath());
+				zipFileInfo = null;
+				zipOpen = ZipOpenType.CLOSED;
+			}
 		}
-
-		close();
-		Files.deleteIfExists(zipFileInfo.toPath());
-		zipFileInfo = null;
-		zipOpen = ZipOpenType.CLOSED;
 	}
 
 	@Override
@@ -407,7 +387,7 @@ public final class ZipFile implements ICompress
 	@Override
 	public final ZipReturn zipFileCloseWriteStream(byte[] crc32) throws IOException
 	{
-		return localFiles.get(localFiles.size() - 1).localFileCloseWriteStream(crc32);
+		return localFiles.getLast().localFileCloseWriteStream(crc32);
 	}
 
 	@Override
@@ -572,7 +552,7 @@ public final class ZipFile implements ICompress
 			esbc.get(buffer);
 			long r = esbc.endChecksum();
 			final var tcrc = new String(fileComment, StandardCharsets.US_ASCII).substring(14, 22); //$NON-NLS-1$ //$NON-NLS-2$
-			final var zcrc = String.format("%08X", r); //$NON-NLS-1$
+			final var zcrc = HexFormat.of().withUpperCase().toHexDigits((int) r);
 			if (tcrc.equals(zcrc))
 				return true;
 		}

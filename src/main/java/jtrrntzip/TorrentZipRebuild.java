@@ -71,7 +71,7 @@ public final class TorrentZipRebuild {
             logCallback.statusCallBack((int) ((double) (i + 1) / zippedFiles.size() * 100));
             final var t = zippedFiles.get(i);
             if (logCallback.isVerboseLogging())
-                logCallback.statusLogCallBack(String.format("%15s %s %s", t.getSize(), t.toString(), t.getName())); //$NON-NLS-1$
+                logCallback.statusLogCallBack(String.format("%15s %s %s", t.size(), t.toString(), t.name())); //$NON-NLS-1$
             if (!copyEntry(t, originalZipFile, zipFileOut, buffer))
                 return false;
         }
@@ -82,11 +82,11 @@ public final class TorrentZipRebuild {
         if (!(originalZipFile instanceof ZipFile ozf))
             return false;
 
-        final var read = ozf.zipFileOpenReadStream(t.getIndex(), false);
+        final var read = ozf.zipFileOpenReadStream(t.index(), false);
         if (read.status() != ZipReturn.ZIPGOOD)
             return false;
 
-        final var write = zipFileOut.zipFileOpenWriteStream(false, true, t.getName(), read.size(), (short) 8);
+        final var write = zipFileOut.zipFileOpenWriteStream(false, true, t.name(), read.size(), (short) 8);
         if (write.status() != ZipReturn.ZIPGOOD)
             return false;
 
@@ -102,10 +102,10 @@ public final class TorrentZipRebuild {
             ws.finish();
 
         originalZipFile.zipFileCloseReadStream();
-        if ((int) crcCs.getChecksum().getValue() != t.getCrc())
+        if ((int) crcCs.getChecksum().getValue() != t.crc())
             return false;
 
-        zipFileOut.zipFileCloseWriteStream(t.getLECRC());
+        zipFileOut.zipFileCloseWriteStream(t.leCrc());
         return true;
     }
 
