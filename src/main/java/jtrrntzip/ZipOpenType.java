@@ -1,8 +1,7 @@
 package jtrrntzip;
 
-public enum ZipOpenType
-{
-	CLOSED,
-	OPENREAD,
-	OPENWRITE
+public enum ZipOpenType {
+    CLOSED,
+    OPENREAD,
+    OPENWRITE
 }

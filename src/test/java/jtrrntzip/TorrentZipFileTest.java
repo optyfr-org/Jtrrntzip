@@ -39,23 +39,22 @@ class TorrentZipFileTest {
     Path tempDir;
 
     private static final List<String> TORRENT_ZIP_RESOURCES = List.of(
-        "03A3D133F0BB34F8A7A1E18C30EE847F47A291F1.zip",
-        "3ACF0BB6DE56430ADB6F78B6D4475DDD32827CE5.zip",
-        "19F33A06D4B909FB3766B3846E44B0EB489D0097.zip",
-        "0674D5755E93BBDC81D17B23AB06CEDA3DEE9AB7.zip",
-        "bbcm.zip",
-        "BFB5E4C92A25A560F5C8765A4D5DE6F2E3FB75B2.zip",
-        "C6863CEC9A2488BCA3EA45BC9ACC274E8A225B48.zip",
-        "cacb1f582c13d2d28b81470f3efc144b9732a7f0.zip",
-        "cps1demo.zip",
-        "E22A0E0EF7AC6E2B80048990FEEB8C8BD46D3333.zip",
-        "F81F2CB938F55051164F6FA04BD094CC29885CDA.zip",
-        "sample-1.zip",
-        "sample-2.zip",
-        "sample-3.zip",
-        "sample-4.zip",
-        "sample-5.zip"
-    );
+            "03A3D133F0BB34F8A7A1E18C30EE847F47A291F1.zip",
+            "3ACF0BB6DE56430ADB6F78B6D4475DDD32827CE5.zip",
+            "19F33A06D4B909FB3766B3846E44B0EB489D0097.zip",
+            "0674D5755E93BBDC81D17B23AB06CEDA3DEE9AB7.zip",
+            "bbcm.zip",
+            "BFB5E4C92A25A560F5C8765A4D5DE6F2E3FB75B2.zip",
+            "C6863CEC9A2488BCA3EA45BC9ACC274E8A225B48.zip",
+            "cacb1f582c13d2d28b81470f3efc144b9732a7f0.zip",
+            "cps1demo.zip",
+            "E22A0E0EF7AC6E2B80048990FEEB8C8BD46D3333.zip",
+            "F81F2CB938F55051164F6FA04BD094CC29885CDA.zip",
+            "sample-1.zip",
+            "sample-2.zip",
+            "sample-3.zip",
+            "sample-4.zip",
+            "sample-5.zip");
 
     static List<String> torrentZipResources() {
         return TORRENT_ZIP_RESOURCES;
@@ -69,7 +68,7 @@ class TorrentZipFileTest {
         File zipFile = new File(resourceUrl.toURI());
         assertTrue(zipFile.exists(), "Zip file does not exist: " + zipFile);
 
-        try (ZipFile zf = new ZipFile()) {  // note: ZipFile implements ICompress but no AutoCloseable? check
+        try (ZipFile zf = new ZipFile()) { // note: ZipFile implements ICompress but no AutoCloseable? check
             ZipReturn zr = zf.zipFileOpen(zipFile, zipFile.lastModified(), true);
             assertEquals(ZipReturn.ZIPGOOD, zr, "Expected ZIPGOOD for " + resourceName + " but got " + zr + " (" + ZipFile.zipErrorMessageText(zr) + ")");
         }
@@ -96,8 +95,7 @@ class TorrentZipFileTest {
         assertNotNull(resourceUrl, "Resource not found: " + resourceName);
         File zipFile = new File(resourceUrl.toURI());
 
-        jtrrntzip.supportedfiles.zipfile.ZipFile zf = new jtrrntzip.supportedfiles.zipfile.ZipFile();
-        try {
+        try (jtrrntzip.supportedfiles.zipfile.ZipFile zf = new jtrrntzip.supportedfiles.zipfile.ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, zf.zipFileOpen(zipFile, zipFile.lastModified(), true),
                     "Expected ZIPGOOD for " + resourceName);
             for (int i = 1; i < zf.localFilesCount(); i++) {
@@ -107,8 +105,7 @@ class TorrentZipFileTest {
                         "Corpus order for " + resourceName + " must be ascending per the reference comparator: "
                                 + prev + " !< " + next);
             }
-        } finally {
-            try { zf.zipFileClose(); zf.close(); } catch (Exception _) { /* ignore */ }
+            zf.zipFileClose();
         }
     }
 
@@ -120,7 +117,7 @@ class TorrentZipFileTest {
         File originalTzip = new File(resourceUrl.toURI());
         assertTrue(originalTzip.exists());
 
-        // unique work dir under @TempDir 
+        // unique work dir under @TempDir
         String base = resourceName.replace(".zip", "").replaceAll("[^a-zA-Z0-9]", "_");
         Path workDir = tempDir.resolve(base);
         Files.createDirectories(workDir);
@@ -143,7 +140,7 @@ class TorrentZipFileTest {
         TorrentZip tz = new TorrentZip(log, options);
         var status = tz.process(workZip);
         assertTrue(status.contains(TrrntZipStatus.VALIDTRRNTZIP),
-            "Conversion to tzip should succeed for " + resourceName + ", got " + status);
+                "Conversion to tzip should succeed for " + resourceName + ", got " + status);
 
         File producedTzip = workZip;
         assertTrue(producedTzip.exists());
@@ -158,8 +155,7 @@ class TorrentZipFileTest {
     private void extractZipToDir(File zipFile, Path targetDir) throws IOException {
         Files.createDirectories(targetDir);
 
-        final var zf = new ZipFile();
-        try {
+        try (final ZipFile zf = new ZipFile()) {
             ZipReturn openRet = zf.zipFileOpen(zipFile, zipFile.lastModified(), true);
             if (openRet != ZipReturn.ZIPGOOD) {
                 throw new IOException("Failed to open zip for extract: " + openRet + " for " + zipFile);
@@ -188,16 +184,18 @@ class TorrentZipFileTest {
                     while (togo > 0) {
                         int len = (int) Math.min(buf.length, togo);
                         int n = opened.stream().read(buf, 0, len);
-                        if (n < 0) break;
+                        if (n < 0)
+                            break;
                         out.write(buf, 0, n);
                         togo -= n;
                     }
                 } finally {
-                    try { zf.zipFileCloseReadStream(); } catch (Exception _) { /* ignore */ }
+                    try {
+                        zf.zipFileCloseReadStream();
+                    } catch (Exception _) {
+                        /* ignore */ }
                 }
             }
-        } finally {
-            try { zf.zipFileClose(); zf.close(); } catch (Exception _) { /* ignore */ }
         }
     }
 
@@ -213,7 +211,8 @@ class TorrentZipFileTest {
                     .sorted(Comparator.reverseOrder())
                     .toList();
             for (Path d : dirs) {
-                if (d.equals(srcDir)) continue;
+                if (d.equals(srcDir))
+                    continue;
                 String name = srcDir.relativize(d).toString().replace('\\', '/') + "/";
                 ZipEntry ze = new ZipEntry(name);
                 ze.setTime(0L);
@@ -243,9 +242,8 @@ class TorrentZipFileTest {
         // for same content).
 
         // explicit structure via project's parser (works for all tzips)
-        jtrrntzip.supportedfiles.zipfile.ZipFile zexp = new jtrrntzip.supportedfiles.zipfile.ZipFile();
-        jtrrntzip.supportedfiles.zipfile.ZipFile zact = new jtrrntzip.supportedfiles.zipfile.ZipFile();
-        try {
+        try (jtrrntzip.supportedfiles.zipfile.ZipFile zexp = new jtrrntzip.supportedfiles.zipfile.ZipFile();
+                jtrrntzip.supportedfiles.zipfile.ZipFile zact = new jtrrntzip.supportedfiles.zipfile.ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, zexp.zipFileOpen(expected, expected.lastModified(), true), "open expected");
             assertEquals(ZipReturn.ZIPGOOD, zact.zipFileOpen(actual, actual.lastModified(), true), "open actual");
 
@@ -266,9 +264,6 @@ class TorrentZipFileTest {
             String cact = readZipFileComment(actual);
             assertEquals(cexp, cact, "torrentzip comment mismatch");
             assertTrue(cexp.startsWith("TORRENTZIPPED-"), "bad comment on expected");
-        } finally {
-            try { zexp.zipFileClose(); zexp.close(); } catch (Exception _) { /* ignore */ }
-            try { zact.zipFileClose(); zact.close(); } catch (Exception _) { /* ignore */ }
         }
     }
 
@@ -289,7 +284,8 @@ class TorrentZipFileTest {
 
     // === Central Directory Dump for debugging, disabled unless -Djtrrntzip.test.dump=true ===
     private void dumpCentralDirectoryComparison(File orig, File produced, String base) throws IOException {
-        if (!DUMP_ENABLED) return;
+        if (!DUMP_ENABLED)
+            return;
 
         Path dumpRoot = DUMP_ROOT.resolve(base);
         Files.createDirectories(dumpRoot);
@@ -304,9 +300,9 @@ class TorrentZipFileTest {
         long crcOrig = crc32(cdOrig);
         long crcProd = crc32(cdProd);
         Files.writeString(dumpRoot.resolve("cd-crcs.txt"),
-            "Orig CD CRC (hex): " + String.format("%08X", crcOrig) + "\n" +
-            "Prod CD CRC (hex): " + String.format("%08X", crcProd) + "\n" +
-            "Comment would be: TORRENTZIPPED-" + String.format("%08X", crcOrig) + " vs TORRENTZIPPED-" + String.format("%08X", crcProd) + "\n");
+                "Orig CD CRC (hex): " + String.format("%08X", crcOrig) + "\n" +
+                        "Prod CD CRC (hex): " + String.format("%08X", crcProd) + "\n" +
+                        "Comment would be: TORRENTZIPPED-" + String.format("%08X", crcOrig) + " vs TORRENTZIPPED-" + String.format("%08X", crcProd) + "\n");
 
         // Parsed text dumps
         dumpParsedCentralDir(cdOrig, dumpRoot.resolve("orig-cd.txt"), "ORIG");
@@ -347,9 +343,9 @@ class TorrentZipFileTest {
         for (int i = data.length - 22; i >= start; i--) {
             if (data[i] == 0x50 && data[i + 1] == 0x4b && data[i + 2] == 0x05 && data[i + 3] == 0x06) {
                 long cdSize = ((data[i + 12] & 0xFFL) | ((data[i + 13] & 0xFFL) << 8) |
-                               ((data[i + 14] & 0xFFL) << 16) | ((data[i + 15] & 0xFFL) << 24));
+                        ((data[i + 14] & 0xFFL) << 16) | ((data[i + 15] & 0xFFL) << 24));
                 long cdOffset = ((data[i + 16] & 0xFFL) | ((data[i + 17] & 0xFFL) << 8) |
-                                 ((data[i + 18] & 0xFFL) << 16) | ((data[i + 19] & 0xFFL) << 24));
+                        ((data[i + 18] & 0xFFL) << 16) | ((data[i + 19] & 0xFFL) << 24));
                 if (cdOffset + cdSize <= data.length) {
                     byte[] cd = new byte[(int) cdSize];
                     System.arraycopy(data, (int) cdOffset, cd, 0, (int) cdSize);
@@ -369,23 +365,37 @@ class TorrentZipFileTest {
         int idx = 0;
         while (pos + 46 <= cd.length) {
             int sig = readIntLE(cd, pos);
-            if (sig != 0x02014b50) break;
+            if (sig != 0x02014b50)
+                break;
 
             sb.append(String.format("Entry #%d%n", idx++));
             pos += 4;
-            sb.append("  verMade=" + readUShortLE(cd, pos) + "  verNeeded=" + readUShortLE(cd, pos+2) + "\n"); pos += 4;
-            int flags = readUShortLE(cd, pos); pos += 2;
-            int method = readUShortLE(cd, pos); pos += 2;
-            int mtime = readUShortLE(cd, pos); pos += 2;
-            int mdate = readUShortLE(cd, pos); pos += 2;
-            byte[] crc = new byte[4]; System.arraycopy(cd, pos, crc, 0, 4); pos += 4;
-            long csize = readUIntLE(cd, pos); pos += 4;
-            long usize = readUIntLE(cd, pos); pos += 4;
-            int nlen = readUShortLE(cd, pos); pos += 2;
-            int elen = readUShortLE(cd, pos); pos += 2;
-            int clen = readUShortLE(cd, pos); pos += 2;
+            sb.append("  verMade=" + readUShortLE(cd, pos) + "  verNeeded=" + readUShortLE(cd, pos + 2) + "\n");
+            pos += 4;
+            int flags = readUShortLE(cd, pos);
+            pos += 2;
+            int method = readUShortLE(cd, pos);
+            pos += 2;
+            int mtime = readUShortLE(cd, pos);
+            pos += 2;
+            int mdate = readUShortLE(cd, pos);
+            pos += 2;
+            byte[] crc = new byte[4];
+            System.arraycopy(cd, pos, crc, 0, 4);
+            pos += 4;
+            long csize = readUIntLE(cd, pos);
+            pos += 4;
+            long usize = readUIntLE(cd, pos);
+            pos += 4;
+            int nlen = readUShortLE(cd, pos);
+            pos += 2;
+            int elen = readUShortLE(cd, pos);
+            pos += 2;
+            int clen = readUShortLE(cd, pos);
+            pos += 2;
             pos += 2 + 2 + 4; // disk + intAttr + extAttr
-            long relOff = readUIntLE(cd, pos); pos += 4;
+            long relOff = readUIntLE(cd, pos);
+            pos += 4;
 
             Charset nameCharset = ((flags & (1 << 11)) != 0) ? StandardCharsets.UTF_8 : Charset.forName("Cp437");
             String name = new String(cd, pos, nlen, nameCharset);
@@ -419,7 +429,7 @@ class TorrentZipFileTest {
 
     private long readUIntLE(byte[] b, int off) {
         return (b[off] & 0xFFL) | ((b[off + 1] & 0xFFL) << 8) |
-               ((b[off + 2] & 0xFFL) << 16) | ((b[off + 3] & 0xFFL) << 24);
+                ((b[off + 2] & 0xFFL) << 16) | ((b[off + 3] & 0xFFL) << 24);
     }
 
     private int readIntLE(byte[] b, int off) {
@@ -428,7 +438,8 @@ class TorrentZipFileTest {
 
     private String bytesToHex(byte[] b) {
         StringBuilder sb = new StringBuilder();
-        for (byte v : b) sb.append(String.format("%02X", v & 0xFF));
+        for (byte v : b)
+            sb.append(String.format("%02X", v & 0xFF));
         return sb.toString();
     }
 
@@ -446,26 +457,40 @@ class TorrentZipFileTest {
         boolean first = true;
         while (pos + 46 <= cd.length) {
             int sig = readIntLE(cd, pos);
-            if (sig != 0x02014b50) break;
+            if (sig != 0x02014b50)
+                break;
 
-            if (!first) sb.append(",\n");
+            if (!first)
+                sb.append(",\n");
             first = false;
 
             pos += 4;
             int verMade = readUShortLE(cd, pos);
-            int verNeeded = readUShortLE(cd, pos + 2); pos += 4;
-            int flags = readUShortLE(cd, pos); pos += 2;
-            int method = readUShortLE(cd, pos); pos += 2;
-            int mtime = readUShortLE(cd, pos); pos += 2;
-            int mdate = readUShortLE(cd, pos); pos += 2;
-            byte[] crc = Arrays.copyOfRange(cd, pos, pos + 4); pos += 4;
-            long csize = readUIntLE(cd, pos); pos += 4;
-            long usize = readUIntLE(cd, pos); pos += 4;
-            int nlen = readUShortLE(cd, pos); pos += 2;
-            int elen = readUShortLE(cd, pos); pos += 2;
-            int clen = readUShortLE(cd, pos); pos += 2;
+            int verNeeded = readUShortLE(cd, pos + 2);
+            pos += 4;
+            int flags = readUShortLE(cd, pos);
+            pos += 2;
+            int method = readUShortLE(cd, pos);
+            pos += 2;
+            int mtime = readUShortLE(cd, pos);
+            pos += 2;
+            int mdate = readUShortLE(cd, pos);
+            pos += 2;
+            byte[] crc = Arrays.copyOfRange(cd, pos, pos + 4);
+            pos += 4;
+            long csize = readUIntLE(cd, pos);
+            pos += 4;
+            long usize = readUIntLE(cd, pos);
+            pos += 4;
+            int nlen = readUShortLE(cd, pos);
+            pos += 2;
+            int elen = readUShortLE(cd, pos);
+            pos += 2;
+            int clen = readUShortLE(cd, pos);
+            pos += 2;
             pos += 2 + 2 + 4; // disk, intAttr, extAttr
-            long relOff = readUIntLE(cd, pos); pos += 4;
+            long relOff = readUIntLE(cd, pos);
+            pos += 4;
 
             boolean utf8 = (flags & (1 << 11)) != 0;
             Charset nameCharset = utf8 ? StandardCharsets.UTF_8 : Charset.forName("Cp437");
@@ -500,7 +525,8 @@ class TorrentZipFileTest {
     }
 
     private String escapeJson(String s) {
-        if (s == null) return "";
+        if (s == null)
+            return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 }

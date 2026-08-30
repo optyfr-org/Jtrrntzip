@@ -14,49 +14,49 @@ import java.util.EnumSet;
 
 public interface ICompress extends Closeable {
 
-	record OpenedReadStream(ZipReturn status, InputStream stream, long size, int compressionMethod) {
-		public static OpenedReadStream failed(final ZipReturn status) {
-			return new OpenedReadStream(status, null, 0, 0);
-		}
-	}
+    record OpenedReadStream(ZipReturn status, InputStream stream, long size, int compressionMethod) {
+        public static OpenedReadStream failed(final ZipReturn status) {
+            return new OpenedReadStream(status, null, 0, 0);
+        }
+    }
 
-	record OpenedWriteStream(ZipReturn status, OutputStream stream) {
-		public static OpenedWriteStream failed(final ZipReturn status) {
-			return new OpenedWriteStream(status, null);
-		}
-	}
+    record OpenedWriteStream(ZipReturn status, OutputStream stream) {
+        public static OpenedWriteStream failed(final ZipReturn status) {
+            return new OpenedWriteStream(status, null);
+        }
+    }
 
-	int localFilesCount();
+    int localFilesCount();
 
-	String filename(int i);
+    String filename(int i);
 
-	long uncompressedSize(int i);
+    long uncompressedSize(int i);
 
-	byte[] crc32(int i);
+    byte[] crc32(int i);
 
-	ZipReturn fileStatus(int i);
+    ZipReturn fileStatus(int i);
 
-	ZipOpenType zipOpen();
+    ZipOpenType zipOpen();
 
-	ZipReturn zipFileOpen(File newFilename, long timestamp, boolean readHeaders) throws IOException;
+    ZipReturn zipFileOpen(File newFilename, long timestamp, boolean readHeaders) throws IOException;
 
-	void zipFileClose() throws IOException;
+    void zipFileClose() throws IOException;
 
-	OpenedReadStream zipFileOpenReadStream(int index, boolean raw) throws IOException;
+    OpenedReadStream zipFileOpenReadStream(int index, boolean raw) throws IOException;
 
-	OpenedWriteStream zipFileOpenWriteStream(boolean raw, boolean trrntzip, String filename, long uncompressedSize, short compressionMethod) throws IOException;
+    OpenedWriteStream zipFileOpenWriteStream(boolean raw, boolean trrntzip, String filename, long uncompressedSize, short compressionMethod) throws IOException;
 
-	ZipReturn zipFileCloseReadStream() throws IOException;
+    ZipReturn zipFileCloseReadStream() throws IOException;
 
-	EnumSet<ZipStatus> zipStatus();
+    EnumSet<ZipStatus> zipStatus();
 
-	String zipFilename();
+    String zipFilename();
 
-	long timeStamp();
+    long timeStamp();
 
-	ZipReturn zipFileCreate(File newFilename) throws IOException;
+    ZipReturn zipFileCreate(File newFilename) throws IOException;
 
-	ZipReturn zipFileCloseWriteStream(byte[] crc32) throws IOException;
+    ZipReturn zipFileCloseWriteStream(byte[] crc32) throws IOException;
 
-	void zipFileCloseFailed() throws IOException;
+    void zipFileCloseFailed() throws IOException;
 }

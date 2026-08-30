@@ -2,6 +2,7 @@ package jtrrntzip;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -76,6 +77,55 @@ class ProgramTest {
 
         assertIsValidTorrentZip(good);
         assertArrayEquals(badBytesBefore, Files.readAllBytes(bad), "the corrupt file must not be rebuilt");
+    }
+
+    @Test
+    void checkOnlyFlagLeavesPlainZipsUnchanged() throws Exception {
+        final var zip = writeSingleEntryStoredZip(tempDir.resolve("check-only.zip"));
+        final var before = Files.readAllBytes(zip);
+
+        assertEquals(Program.EXIT_OK, new Program(new String[] { "-c", zip.toString() }).run());
+
+        assertArrayEquals(before, Files.readAllBytes(zip), "-c must not repair anything");
+    }
+
+    @Test
+    void recursionStopsAtTopLevelDirectoriesWithDashS() throws Exception {
+        final var dir = tempDir.resolve("nested");
+        Files.createDirectories(dir.resolve("inner"));
+        final var outer = writeSingleEntryStoredZip(dir.resolve("outer.zip"));
+        final var inner = writeSingleEntryStoredZip(dir.resolve("inner").resolve("inner.zip"));
+
+        assertEquals(Program.EXIT_OK, new Program(new String[] { "-s", dir.toString() }).run());
+        assertIsValidTorrentZip(outer);
+        assertFalseFileIsTorrentZip(inner);
+
+        assertEquals(Program.EXIT_OK, new Program(new String[] { dir.toString() }).run());
+        assertIsValidTorrentZip(inner);
+    }
+
+    private static void assertFalseFileIsTorrentZip(final Path zip) throws IOException {
+        try (var openZip = new ZipFile()) {
+            assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true));
+            assertFalse(openZip.zipStatus().contains(ZipStatus.TRRNTZIP),
+                    zip + " must not have been touched by the -s run");
+            openZip.zipFileClose();
+        }
+    }
+
+    @Test
+    void unmatchedBracketFileArgumentFindsNothingAndExitsOk() {
+        assertEquals(Program.EXIT_OK,
+                new Program(new String[] { tempDir.resolve("no[match].zip").toString() }).run());
+    }
+
+    @Test
+    void verboseFlagRunsOnADirectoryWithoutFailing() throws Exception {
+        final var dir = tempDir.resolve("verbose-dir");
+        Files.createDirectories(dir);
+        writeSingleEntryStoredZip(dir.resolve("plain.zip"));
+
+        assertEquals(Program.EXIT_OK, new Program(new String[] { "-l", dir.toString() }).run());
     }
 
     private static Path writeSingleEntryStoredZip(final Path zip) throws IOException {

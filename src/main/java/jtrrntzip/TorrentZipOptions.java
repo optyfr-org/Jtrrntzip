@@ -1,7 +1,7 @@
 package jtrrntzip;
 
-public interface TorrentZipOptions
-{
-	boolean isForceRezip();
-	boolean isCheckOnly();
+public interface TorrentZipOptions {
+    boolean isForceRezip();
+
+    boolean isCheckOnly();
 }

@@ -66,7 +66,11 @@ final class TestZipFixtures {
     }
 
     static void writeOwnEntry(final ZipFile zf, final String name, final byte[] content) throws IOException {
-        final var opened = zf.zipFileOpenWriteStream(false, true, name, content.length, (short) 8);
+        writeOwnEntryWithDeclaredSize(zf, name, content.length, content);
+    }
+
+    static void writeOwnEntryWithDeclaredSize(final ZipFile zf, final String name, final long declaredSize, final byte[] content) throws IOException {
+        final var opened = zf.zipFileOpenWriteStream(false, true, name, declaredSize, (short) 8);
         if (opened.status() != ZipReturn.ZIPGOOD)
             throw new IOException("failed to open write stream for " + name);
         final var stream = opened.stream();
@@ -76,6 +80,29 @@ final class TestZipFixtures {
             ds.finish();
         if (zf.zipFileCloseWriteStream(crcOf(content)) != ZipReturn.ZIPGOOD)
             throw new IOException("failed to close write stream for " + name);
+    }
+
+    static final class RecordingLogCallback implements LogCallback {
+        private final List<String> logs = new java.util.ArrayList<>();
+
+        @Override
+        public void statusLogCallBack(final String log) {
+            logs.add(log);
+        }
+
+        @Override
+        public void statusCallBack(final int percent) {
+            // progress is not recorded
+        }
+
+        @Override
+        public boolean isVerboseLogging() {
+            return true;
+        }
+
+        List<String> logs() {
+            return logs;
+        }
     }
 
     static int findEocd(final byte[] data) {
