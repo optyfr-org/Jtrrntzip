@@ -1,27 +1,12 @@
 plugins {
     id 'java'
+    id 'application'
     id 'jacoco'
     id 'eclipse'
-    id "maven-publish"
-    id "org.sonarqube"
-    id "org.beryx.jlink" version "latest.release"
-    id 'org.graalvm.buildtools.native' version 'latest.release'
-}
-
-sonarqube {
-    properties {
-        property "sonar.projectKey", "optyfr_Jtrrntzip"
-        property "sonar.organization", "optyfr"
-        property "sonar.host.url", "https://sonarcloud.io"
-        property "sonar.sourceEncoding", "utf-8"
-        property "sonar.log.level", "INFO"
-        property "sonar.verbose", "true"
-        property "sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml"
-    }
-}
-
-jacoco {
-    toolVersion = "0.8.14"
+    id 'maven-publish'
+    alias(libs.plugins.sonarqube)
+    alias(libs.plugins.jlink)
+    alias(libs.plugins.graalvm)
 }
 
 java {
@@ -30,13 +15,19 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
+    withJavadocJar()
+    withSourcesJar()
 }
 
 def props = new Properties()
 file("dist/ver.properties").withInputStream { props.load(it) }
 
 version = props.getProperty("Specification-Version") + '.' + props.getProperty("Implementation-Version")
-def theVersion = version
+group = "com.github.optyfr"
+
+base {
+    archivesName = 'Jtrrntzip'
+}
 
 def manifestAttributes = [
     "Manifest-Version"     : "1.0",
@@ -55,200 +46,27 @@ application {
     mainClass = 'jtrrntzip.Program'
 }
 
-import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
-
-def os = DefaultNativePlatform.currentOperatingSystem
-def arch = DefaultNativePlatform.currentArchitecture
-
-graalvmNative {
-    toolchainDetection = false
-    binaries {
-        main {
-            mainClass = 'jtrrntzip.Program'
-            imageName = 'jtrrntzip'
-            buildArgs.add('-march=x86-64-v2')
-            buildArgs.add('-O3')
-            buildArgs.add('--future-defaults=all')
-            if(os.isLinux()) {
-                buildArgs.add('--gc=G1')
-            }
-            buildArgs.add('-H:+AddAllCharsets')
-            buildArgs.add('-H:+ReportExceptionStackTraces')
-        }
-        all {
-            resources.autodetect()
-        }
-    }
-    metadataRepository {
-        enabled = true
-    }
-    agent {
-        defaultMode = "standard"
-        enabled = true
-
-        trackReflectionMetadata = true
-
-        metadataCopy {
-            inputTaskNames.add("run")
-            outputDirectories.add("src/main/resources/META-INF/native-image/")
-            mergeWithExisting = false
-        }
-    }
-}
-
-base {
-    archivesName = 'Jtrrntzip'
-}
-
-eclipse {
-    classpath {
-        downloadJavadoc = true
-        downloadSources = true
-        file {
-            whenMerged {
-                //Define a module as being either a library or a project dependency.
-                //Test sources are excluded because eclipse wants them on the classpath for some reason (1)
-                entries.findAll { (it instanceof org.gradle.plugins.ide.eclipse.model.Library || it instanceof org.gradle.plugins.ide.eclipse.model.ProjectDependency) && !it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
-                    it.entryAttributes['module'] = 'true'
-                }
-
-                //Test-scoped stuff should set the appropriate flag
-                entries.findAll { (it.properties.kind.equals('src') || it.properties.kind.equals('lib')) && it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
-                    it.entryAttributes['test'] = 'true'
-                }
-
-                entries.findAll { isConGradle(it) }.each {
-                    it.entryAttributes['module'] = 'true'
-                }
-            }
-        }
-    }
-}
-
-boolean isConGradle(entry) {
-    entry.kind == 'con' && entry.path == 'org.eclipse.buildship.core.gradleclasspathcontainer'
-}
-
 dependencies {
-    implementation 'commons-codec:commons-codec:1.+'
-    implementation 'commons-io:commons-io:2.+'
-    implementation 'org.apache.commons:commons-lang3:3.+'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.+'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    implementation libs.commons.codec
+    implementation libs.commons.io
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
 }
 
 jar {
     manifest {
         attributes(manifestAttributes)
-//            "Class-Path"           : configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
     archiveFileName = base.archivesName.get() + '.jar'
-}
-
-group = "com.github.optyfr"
-
-java {
-    withJavadocJar()
-    withSourcesJar()
 }
 
 tasks.named('sourcesJar', Jar) {
     duplicatesStrategy = 'include'
 }
 
-test {
-    finalizedBy jacocoTestReport
-    useJUnitPlatform()
-    testLogging {
-        events "passed", "skipped", "failed"
-        exceptionFormat = 'full'
-    }
-
-    addTestListener(new TestListener() {
-        void aftersuite(TestDescriptor desc, TestResult result) {
-            if (!desc.parent) {
-                def output = "Results: ${result.resultType} (${result.testCount} tests, ${result.successfulTestCount} successes, ${result.failedTestCount} failures, ${result.skippedTestCount} skipped)"
-                def startItem = '|  ', endItem = '  |'
-                def repeatLength = startItem.length() + output.length() + endItem.length()
-                println('\n' + ('-' * repeatLength) + '\n' + startItem + output + endItem + '\n' + ('-' * repeatLength))
-            }
-        }
-    })
-}
-
-jacocoTestReport {
-    reports {
-        xml.required = true
-        html.required = true
-    }
-}
-
-publishing {
-    repositories {
-        maven {
-            name = "jtrrntzip"
-            url = uri("https://maven.pkg.github.com/optyfr/Jtrrntzip")
-            credentials {
-                username = providers.gradleProperty("gpr.user").orElse(providers.environmentVariable("USERNAME")).getOrNull()
-                password = providers.gradleProperty("gpr.key").orElse(providers.environmentVariable("TOKEN")).getOrNull()
-            }
-        }
-    }
-    publications {
-        gpr(MavenPublication) {
-            artifactId = "jtrrntzip"
-            from(components.java)
-            versionMapping {
-                usage('java-api') {
-                    fromResolutionOf('runtimeClasspath')
-                }
-                usage('java-runtime') {
-                    fromResolutionResult()
-                }
-            }
-            pom {
-                name = 'JTrrntzip'
-                description = 'Java version of trrntzip Based on C# code from TrrntzipDN by GordonJ'
-                url = 'https://github.com/optyfr/Jtrrntzip'
-                licenses {
-                    license {
-                        name = 'MIT License'
-                        url = 'https://raw.githubusercontent.com/optyfr/Jtrrntzip/master/LICENSE'
-                    }
-                }
-                developers {
-                    developer {
-                        id = 'optyfr'
-                        name = 'optyfr'
-                        email = '17027109+optyfr@users.noreply.github.com'
-                    }
-                }
-                scm {
-                    connection = 'scm:git:git://github.com/optyfr/Jtrrntzip.git'
-                    developerConnection = 'scm:git:git@github.com:optyfr/Jtrrntzip.git'
-                    url = 'https://github.com/optyfr/Jtrrntzip.git'
-                }
-            }
-        }
-    }
-}
-
-task distZip2(type: Zip) {
-    dependsOn tasks.jar
-    from(configurations.runtimeClasspath) {
-        into('lib')
-    }
-    from(tasks.jar)
-    from('dist') {
-        include '*.bat'
-        include '*.sh'
-        filePermissions {
-            unix(0755)
-        }
-    }
-    archiveFileName = base.archivesName.get() + '-' + theVersion + '.zip'
-    destinationDirectory = layout.buildDirectory.dir('distributions')
-}
-
-assemble.dependsOn 'distZip2'
-
+apply from: "$rootDir/gradle/quality.gradle"
+apply from: "$rootDir/gradle/publishing.gradle"
+apply from: "$rootDir/gradle/native.gradle"
+apply from: "$rootDir/gradle/eclipse.gradle"
+apply from: "$rootDir/gradle/distribution.gradle"

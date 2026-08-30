@@ -1,0 +1,28 @@
+eclipse {
+    classpath {
+        downloadJavadoc = true
+        downloadSources = true
+        file {
+            whenMerged {
+                //Define a module as being either a library or a project dependency.
+                //Test sources are excluded because eclipse wants them on the classpath for some reason (1)
+                entries.findAll { (it instanceof org.gradle.plugins.ide.eclipse.model.Library || it instanceof org.gradle.plugins.ide.eclipse.model.ProjectDependency) && !it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
+                    it.entryAttributes['module'] = 'true'
+                }
+
+                //Test-scoped stuff should set the appropriate flag
+                entries.findAll { (it.properties.kind.equals('src') || it.properties.kind.equals('lib')) && it.entryAttributes.get('gradle_used_by_scope').equals('test') }.each {
+                    it.entryAttributes['test'] = 'true'
+                }
+
+                entries.findAll { isConGradle(it) }.each {
+                    it.entryAttributes['module'] = 'true'
+                }
+            }
+        }
+    }
+}
+
+boolean isConGradle(entry) {
+    entry.kind == 'con' && entry.path == 'org.eclipse.buildship.core.gradleclasspathcontainer'
+}

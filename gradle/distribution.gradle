@@ -1,0 +1,18 @@
+task distZip2(type: Zip) {
+    dependsOn tasks.jar
+    from(configurations.runtimeClasspath) {
+        into('lib')
+    }
+    from(tasks.jar)
+    from('dist') {
+        include '*.bat'
+        include '*.sh'
+        filePermissions {
+            unix(0755)
+        }
+    }
+    archiveFileName = base.archivesName.get() + '-' + project.version + '.zip'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+}
+
+assemble.dependsOn 'distZip2'

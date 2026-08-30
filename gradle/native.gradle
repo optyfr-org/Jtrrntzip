@@ -1,0 +1,39 @@
+import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
+
+def os = DefaultNativePlatform.currentOperatingSystem
+
+graalvmNative {
+    toolchainDetection = false
+    binaries {
+        main {
+            mainClass = 'jtrrntzip.Program'
+            imageName = 'jtrrntzip'
+            buildArgs.add('-march=x86-64-v2')
+            buildArgs.add('-O3')
+            buildArgs.add('--future-defaults=all')
+            if(os.isLinux()) {
+                buildArgs.add('--gc=G1')
+            }
+            buildArgs.add('-H:+AddAllCharsets')
+            buildArgs.add('-H:+ReportExceptionStackTraces')
+        }
+        all {
+            resources.autodetect()
+        }
+    }
+    metadataRepository {
+        enabled = true
+    }
+    agent {
+        defaultMode = "standard"
+        enabled = true
+
+        trackReflectionMetadata = true
+
+        metadataCopy {
+            inputTaskNames.add("run")
+            outputDirectories.add("src/main/resources/META-INF/native-image/")
+            mergeWithExisting = false
+        }
+    }
+}
