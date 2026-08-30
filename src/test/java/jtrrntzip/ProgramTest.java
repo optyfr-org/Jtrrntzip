@@ -86,18 +86,12 @@ class ProgramTest {
     }
 
     private static void assertIsValidTorrentZip(final Path zip) throws IOException {
-        final var openZip = new ZipFile();
-        try {
+        try (var openZip = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true),
                     "reopening " + zip + " failed");
             assertTrue(openZip.zipStatus().contains(ZipStatus.TRRNTZIP),
                     zip + " is not a valid torrent zip after processing");
-        } finally {
-            try {
-                openZip.zipFileClose();
-            } catch (final IOException _) {
-                /* ignore */
-            }
+            openZip.zipFileClose();
         }
     }
 }

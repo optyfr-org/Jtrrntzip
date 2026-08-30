@@ -55,118 +55,112 @@ public final class TorrentZipRebuild
 		}
 	}
 
-	/**
-	 * @param zippedFiles
-	 * @param originalZipFile
-	 * @param buffer
-	 * @param logCallback
-	 * @param filename
-	 * @param tmpFilename
-	 * @param outfilename
-	 * @return
-	 * @throws IOException
-	 */
 	private static Set<TrrntZipStatus> reZipFiles(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final byte[] buffer, final LogCallback logCallback, final Path filename, final Path tmpFilename, final Path outfilename) throws IOException
 	{
 		Files.deleteIfExists(tmpFilename);
-		final ICompress zipFileOut = new ZipFile();
-		var corrupt = false;
-		try
+		try (ICompress zipFileOut = new ZipFile())
 		{
-			zipFileOut.zipFileCreate(tmpFilename.toFile());
-
-			// by now the zippedFiles have been sorted so just loop over them
-			for (var i = 0; i < zippedFiles.size(); i++)
-			{
-				logCallback.statusCallBack((int) ((double) (i + 1) / (zippedFiles.size()) * 100));
-
-				final var t = zippedFiles.get(i);
-
-				if (logCallback.isVerboseLogging())
-					logCallback.statusLogCallBack(String.format("%15s %s %s", t.getSize(), t.toString(), t.getName())); //$NON-NLS-1$
-
-				final AtomicReference<InputStream> readStream = new AtomicReference<>();
-				final AtomicReference<BigInteger> streamSize = new AtomicReference<>();
-				final var compMethod = new AtomicInteger();
-
-				ZipReturn zrInput = ZipReturn.ZIPUNTESTED;
-				if (originalZipFile instanceof ZipFile ozf)
-				{
-					zrInput = ozf.zipFileOpenReadStream(t.getIndex(), false, readStream, streamSize, compMethod);
-				}
-
-				final AtomicReference<OutputStream> writeStream = new AtomicReference<>();
-				final ZipReturn zrOutput = zipFileOut.zipFileOpenWriteStream(false, true, t.getName(), streamSize.get(), (short) 8, writeStream);
-
-				if (zrInput != ZipReturn.ZIPGOOD || zrOutput != ZipReturn.ZIPGOOD)
-				{
-					corrupt = true;
-					break;
-				}
-
-				final var crcCs = new CheckedInputStream(readStream.get(), new CRC32());
-				final var bcrcCs = new BufferedInputStream(crcCs, buffer.length);
-				final var bWriteStream = new BufferedOutputStream(writeStream.get(), buffer.length);
-
-				if (!copyFully(bcrcCs, bWriteStream, streamSize.get().longValue(), buffer))
-				{
-					corrupt = true;
-					break;
-				}
-
-				bWriteStream.flush();
-				if (writeStream.get() instanceof DeflaterOutputStream ws)
-					ws.finish();
-
-				originalZipFile.zipFileCloseReadStream();
-
-				final long crc = crcCs.getChecksum().getValue();
-
-				if ((int) crc != t.getCrc())
-				{
-					corrupt = true;
-					break;
-				}
-
-				zipFileOut.zipFileCloseWriteStream(t.getLECRC());
-			}
-
-			if (!corrupt)
-			{
-				zipFileOut.zipFileClose();
-				originalZipFile.zipFileClose();
-				originalZipFile.close();
-				if (!filename.equals(outfilename))
-					Files.delete(filename);
-				Files.copy(tmpFilename, outfilename, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
-				Files.delete(tmpFilename);
-				return EnumSet.of(TrrntZipStatus.VALIDTRRNTZIP);
-			}
-
-			return EnumSet.of(TrrntZipStatus.CORRUPTZIP);
-		}
-		finally
-		{
-			if (zipFileOut.zipOpen() != ZipOpenType.CLOSED)
-			{
-				try
-				{
-					zipFileOut.zipFileCloseFailed();
-				}
-				catch (final IOException e)
-				{
-					LOGGER.log(Level.FINE, e, () -> "failed close of " + tmpFilename);
-				}
-			}
-			closeQuietly(originalZipFile);
 			try
 			{
-				Files.deleteIfExists(tmpFilename);
+				zipFileOut.zipFileCreate(tmpFilename.toFile());
+				if (!copyAllEntries(zippedFiles, originalZipFile, zipFileOut, buffer, logCallback))
+					return EnumSet.of(TrrntZipStatus.CORRUPTZIP);
+
+				finishRebuild(zipFileOut, originalZipFile, filename, tmpFilename, outfilename);
+				return EnumSet.of(TrrntZipStatus.VALIDTRRNTZIP);
 			}
-			catch (final IOException e)
+			finally
 			{
-				LOGGER.log(Level.FINE, e, () -> "failed to delete " + tmpFilename);
+				abortOutputIfOpen(zipFileOut, tmpFilename);
+				closeQuietly(originalZipFile);
+				deleteQuietly(tmpFilename);
 			}
+		}
+	}
+
+	private static boolean copyAllEntries(final List<ZippedFile> zippedFiles, final ICompress originalZipFile, final ICompress zipFileOut, final byte[] buffer, final LogCallback logCallback) throws IOException
+	{
+		for (var i = 0; i < zippedFiles.size(); i++)
+		{
+			logCallback.statusCallBack((int) ((double) (i + 1) / zippedFiles.size() * 100));
+			final var t = zippedFiles.get(i);
+			if (logCallback.isVerboseLogging())
+				logCallback.statusLogCallBack(String.format("%15s %s %s", t.getSize(), t.toString(), t.getName())); //$NON-NLS-1$
+			if (!copyEntry(t, originalZipFile, zipFileOut, buffer))
+				return false;
+		}
+		return true;
+	}
+
+	private static boolean copyEntry(final ZippedFile t, final ICompress originalZipFile, final ICompress zipFileOut, final byte[] buffer) throws IOException
+	{
+		if (!(originalZipFile instanceof ZipFile ozf))
+			return false;
+
+		final AtomicReference<InputStream> readStream = new AtomicReference<>();
+		final AtomicReference<BigInteger> streamSize = new AtomicReference<>();
+		final var zrInput = ozf.zipFileOpenReadStream(t.getIndex(), false, readStream, streamSize, new AtomicInteger());
+		if (zrInput != ZipReturn.ZIPGOOD)
+			return false;
+
+		final AtomicReference<OutputStream> writeStream = new AtomicReference<>();
+		final var zrOutput = zipFileOut.zipFileOpenWriteStream(false, true, t.getName(), streamSize.get(), (short) 8, writeStream);
+		if (zrOutput != ZipReturn.ZIPGOOD)
+			return false;
+
+		final var crcCs = new CheckedInputStream(readStream.get(), new CRC32());
+		final var bcrcCs = new BufferedInputStream(crcCs, buffer.length);
+		final var bWriteStream = new BufferedOutputStream(writeStream.get(), buffer.length);
+
+		if (!copyFully(bcrcCs, bWriteStream, streamSize.get().longValue(), buffer))
+			return false;
+
+		bWriteStream.flush();
+		if (writeStream.get() instanceof DeflaterOutputStream ws)
+			ws.finish();
+
+		originalZipFile.zipFileCloseReadStream();
+		if ((int) crcCs.getChecksum().getValue() != t.getCrc())
+			return false;
+
+		zipFileOut.zipFileCloseWriteStream(t.getLECRC());
+		return true;
+	}
+
+	private static void finishRebuild(final ICompress zipFileOut, final ICompress originalZipFile, final Path filename, final Path tmpFilename, final Path outfilename) throws IOException
+	{
+		zipFileOut.zipFileClose();
+		originalZipFile.zipFileClose();
+		originalZipFile.close();
+		if (!filename.equals(outfilename))
+			Files.delete(filename);
+		Files.copy(tmpFilename, outfilename, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+		Files.delete(tmpFilename);
+	}
+
+	private static void abortOutputIfOpen(final ICompress zipFileOut, final Path tmpFilename)
+	{
+		if (zipFileOut.zipOpen() == ZipOpenType.CLOSED)
+			return;
+		try
+		{
+			zipFileOut.zipFileCloseFailed();
+		}
+		catch (final IOException e)
+		{
+			LOGGER.log(Level.FINE, e, () -> "failed close of " + tmpFilename);
+		}
+	}
+
+	private static void deleteQuietly(final Path tmpFilename)
+	{
+		try
+		{
+			Files.deleteIfExists(tmpFilename);
+		}
+		catch (final IOException e)
+		{
+			LOGGER.log(Level.FINE, e, () -> "failed to delete " + tmpFilename);
 		}
 	}
 

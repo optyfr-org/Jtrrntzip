@@ -134,7 +134,9 @@ final class TestZipFixtures {
         final var eocd = findEocd(data);
         final var cdStart = (int) readUIntLE(data, eocd + 16);
         final var size = (int) readUIntLE(data, cdStart + 24);
+        @SuppressWarnings("unused")
         final var nameLength = readUShortLE(data, cdStart + 28);
+        @SuppressWarnings("unused")
         final var extraLength = readUShortLE(data, cdStart + 30);
         final var localStart = (int) readUIntLE(data, cdStart + 42);
         var pos = localStart + 30;
@@ -144,8 +146,7 @@ final class TestZipFixtures {
     }
 
     static void storeZip(final Path target, final Map<String, String> entries) throws IOException {
-        final var zos = new ZipOutputStream(new FileOutputStream(target.toFile()));
-        try {
+        try (var zos = new ZipOutputStream(new FileOutputStream(target.toFile()))) {
             zos.setMethod(ZipOutputStream.DEFLATED);
             for (final var entry : entries.entrySet()) {
                 final var zipEntry = new ZipEntry(entry.getKey());
@@ -154,8 +155,6 @@ final class TestZipFixtures {
                 zos.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
                 zos.closeEntry();
             }
-        } finally {
-            zos.close();
         }
     }
 }

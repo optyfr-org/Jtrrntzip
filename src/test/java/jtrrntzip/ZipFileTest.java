@@ -60,17 +60,11 @@ class ZipFileTest {
     }
 
     private static void assertOpensWithCount(final Path zip, final int expectedCount) throws IOException {
-        final var openZip = new ZipFile();
-        try {
+        try (var openZip = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true),
                     "zip with " + expectedCount + " entries must reopen cleanly");
             assertEquals(expectedCount, openZip.localFilesCount());
-        } finally {
-            try {
-                openZip.zipFileClose();
-            } catch (final IOException _) {
-                /* ignore */
-            }
+            openZip.zipFileClose();
         }
     }
 
@@ -82,16 +76,10 @@ class ZipFileTest {
         final var data = Files.readAllBytes(zip);
         Files.write(zip, Arrays.copyOf(data, data.length - 10));
 
-        final var openZip = new ZipFile();
-        try {
+        try (var openZip = new ZipFile()) {
             assertNotEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true),
                     "a truncated zip must not open");
-        } finally {
-            try {
-                openZip.zipFileClose();
-            } catch (final IOException _) {
-                /* ignore */
-            }
+            openZip.zipFileClose();
         }
     }
 
@@ -99,8 +87,7 @@ class ZipFileTest {
     void rollBackRemovesTheLastWrittenEntry() throws Exception {
         final var zip = tempDir.resolve("rollback.zip");
 
-        final ZipFile writer = new ZipFile();
-        try {
+        try (var writer = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, writer.zipFileCreate(zip.toFile()));
             TestZipFixtures.writeOwnEntry(writer, "a.txt", new byte[0]);
 
@@ -110,21 +97,13 @@ class ZipFileTest {
             assertEquals(ZipReturn.ZIPGOOD, writer.zipFileRollBack());
 
             writer.zipFileClose();
-        } finally {
-            writer.close();
         }
 
-        final var openZip = new ZipFile();
-        try {
+        try (var openZip = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true));
             assertEquals(1, openZip.localFilesCount(), "rollback must drop the last entry");
             assertEquals("a.txt", openZip.filename(0));
-        } finally {
-            try {
-                openZip.zipFileClose();
-            } catch (final IOException _) {
-                /* ignore */
-            }
+            openZip.zipFileClose();
         }
     }
 
@@ -132,13 +111,10 @@ class ZipFileTest {
     void zipFileCloseFailedDeletesThePartialOutput() throws Exception {
         final var zip = tempDir.resolve("failed.zip");
 
-        final ZipFile writer = new ZipFile();
-        try {
+        try (var writer = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, writer.zipFileCreate(zip.toFile()));
             TestZipFixtures.writeOwnEntry(writer, "a.txt", new byte[0]);
             writer.zipFileCloseFailed();
-        } finally {
-            writer.close();
         }
 
         assertFalse(Files.exists(zip), "closeFailed must delete the partial output file");
@@ -148,13 +124,10 @@ class ZipFileTest {
     void zipFileCreateAcceptsPathWithoutParentDirectory() throws Exception {
         final var relative = new File("jtrrntzip-relative-create-test.zip");
         try {
-            final ZipFile writer = new ZipFile();
-            try {
+            try (var writer = new ZipFile()) {
                 assertEquals(ZipReturn.ZIPGOOD, writer.zipFileCreate(relative),
                         "create must not fail for a path without a parent directory");
                 writer.zipFileClose();
-            } finally {
-                writer.close();
             }
             assertTrue(relative.exists());
         } finally {
@@ -173,17 +146,11 @@ class ZipFileTest {
 
         TestZipFixtures.lowerCaseTorrentZipComment(zip);
 
-        final var openZip = new ZipFile();
-        try {
+        try (var openZip = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true));
             assertFalse(openZip.zipStatus().contains(ZipStatus.TRRNTZIP),
                     "a lower case comment crc must not validate as torrent zip");
-        } finally {
-            try {
-                openZip.zipFileClose();
-            } catch (final IOException _) {
-                /* ignore */
-            }
+            openZip.zipFileClose();
         }
     }
 
@@ -201,19 +168,13 @@ class ZipFileTest {
         final var status = converter.process(zip.toFile());
         assertTrue(status.contains(TrrntZipStatus.VALIDTRRNTZIP), "conversion must succeed, got " + status);
 
-        final var openZip = new ZipFile();
-        try {
+        try (var openZip = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true));
             assertEquals(2, openZip.localFilesCount());
             assertEquals("\u00C4.txt", openZip.filename(0), "reference fold must place Ä before the kelvin sign");
             assertEquals("\u212A.txt", openZip.filename(1));
             assertTrue(openZip.zipStatus().contains(ZipStatus.TRRNTZIP));
-        } finally {
-            try {
-                openZip.zipFileClose();
-            } catch (final IOException _) {
-                /* ignore */
-            }
+            openZip.zipFileClose();
         }
     }
 
@@ -228,18 +189,12 @@ class ZipFileTest {
         final var converter = new TorrentZip(new DummyLogCallback(), new SimpleTorrentZipOptions(false, false));
         assertTrue(converter.process(zip.toFile()).contains(TrrntZipStatus.VALIDTRRNTZIP));
 
-        final var openZip = new ZipFile();
-        try {
+        try (var openZip = new ZipFile()) {
             assertEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true));
             assertEquals(2, openZip.localFilesCount());
             assertEquals("\u4E2D.txt", openZip.filename(0), "raw code unit order puts 中 before 日");
             assertEquals("\u65E5.txt", openZip.filename(1));
-        } finally {
-            try {
-                openZip.zipFileClose();
-            } catch (final IOException _) {
-                /* ignore */
-            }
+            openZip.zipFileClose();
         }
     }
 
