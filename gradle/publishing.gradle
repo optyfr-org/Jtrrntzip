@@ -2,7 +2,7 @@ publishing {
     repositories {
         maven {
             name = "jtrrntzip"
-            url = uri("https://maven.pkg.github.com/optyfr/Jtrrntzip")
+            url = uri("https://maven.pkg.github.com/optyfr-org/Jtrrntzip")
             credentials {
                 username = providers.gradleProperty("gpr.user").orElse(providers.environmentVariable("USERNAME")).getOrNull()
                 password = providers.gradleProperty("gpr.key").orElse(providers.environmentVariable("TOKEN")).getOrNull()
@@ -24,11 +24,11 @@ publishing {
             pom {
                 name = 'JTrrntzip'
                 description = 'Java version of trrntzip Based on C# code from TrrntzipDN by GordonJ'
-                url = 'https://github.com/optyfr/Jtrrntzip'
+                url = 'https://github.com/optyfr-org/Jtrrntzip'
                 licenses {
                     license {
                         name = 'MIT License'
-                        url = 'https://raw.githubusercontent.com/optyfr/Jtrrntzip/master/LICENSE'
+                        url = 'https://raw.githubusercontent.com/optyfr-org/Jtrrntzip/master/LICENSE'
                     }
                 }
                 developers {
@@ -39,9 +39,9 @@ publishing {
                     }
                 }
                 scm {
-                    connection = 'scm:git:git://github.com/optyfr/Jtrrntzip.git'
-                    developerConnection = 'scm:git:git@github.com:optyfr/Jtrrntzip.git'
-                    url = 'https://github.com/optyfr/Jtrrntzip.git'
+                    connection = 'scm:git:git://github.com/optyfr-org/Jtrrntzip.git'
+                    developerConnection = 'scm:git:git@github.com:optyfr-org/Jtrrntzip.git'
+                    url = 'https://github.com/optyfr-org/Jtrrntzip.git'
                 }
             }
         }
