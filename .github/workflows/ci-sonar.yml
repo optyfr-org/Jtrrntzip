@@ -1,0 +1,44 @@
+name: Sonar
+
+on:
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Setup JDK and Gradle
+      uses: optyfr-org/composite-actions/setup-gradle@5d5db305592dd78357c2980b4482d9dc3b692311 # v1
+
+    - name: Restore build cache
+      uses: optyfr-org/composite-actions/build-cache@5d5db305592dd78357c2980b4482d9dc3b692311 # v1
+      with:
+        mode: restore
+
+    - name: Restore test cache
+      uses: optyfr-org/composite-actions/build-cache@5d5db305592dd78357c2980b4482d9dc3b692311 # v1
+      with:
+        mode: restore
+        cache-name: cache-test
+        path: |
+          build/native
+          build/classes/java/test
+          build/jacoco
+          build/reports
+          build/test-results
+
+    - name: Sonar with Gradle
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: ./gradlew sonar --info

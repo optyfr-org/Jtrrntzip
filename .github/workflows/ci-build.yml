@@ -1,0 +1,26 @@
+name: Build
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
+
+    - name: Validate Gradle wrapper
+      uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+
+    - name: Setup JDK and Gradle
+      uses: optyfr-org/composite-actions/setup-gradle@5d5db305592dd78357c2980b4482d9dc3b692311 # v1
+
+    - name: Build with Gradle
+      run: ./gradlew build -x test
+
+    - name: Save build cache
+      uses: optyfr-org/composite-actions/build-cache@5d5db305592dd78357c2980b4482d9dc3b692311 # v1
+      with:
+        mode: save

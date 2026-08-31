@@ -1,0 +1,65 @@
+name: jpackage
+
+on:
+  workflow_call:
+    inputs:
+      release-version:
+        description: Release version (without v prefix)
+        required: true
+        type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+env:
+  JAVA_VERSION: '25'
+  JAVA_DIST: graalvm
+
+jobs:
+  jpackage:
+    name: jpackage ${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: windows-amd64
+            os: windows-latest
+          - id: linux-amd64
+            os: ubuntu-latest
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_VERSION: ${{ inputs.release-version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup JDK and Gradle
+        uses: optyfr-org/composite-actions/setup-gradle@5d5db305592dd78357c2980b4482d9dc3b692311 # v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          java-distribution: ${{ env.JAVA_DIST }}
+
+      - name: Build jpackage image
+        run: ./gradlew jpackageImage -x test
+
+      - name: Package jpackage artifact
+        id: asset
+        run: |
+          ASSET="Jtrrntzip-${RELEASE_VERSION}-jpackage-${{ matrix.id }}.zip"
+          python -m zipfile -c "${ASSET}" build/jpackage/Jtrrntzip
+          echo "asset=${ASSET}" >> "$GITHUB_OUTPUT"
+
+      - name: Add jpackage artifact to release
+        uses: optyfr-org/composite-actions/upload-release-asset@5d5db305592dd78357c2980b4482d9dc3b692311 # v1
+        with:
+          tag: ${{ github.ref_name }}
+          file: ${{ steps.asset.outputs.asset }}
+          token: ${{ secrets.GITHUB_TOKEN }}
