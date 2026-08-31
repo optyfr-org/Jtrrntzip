@@ -37,21 +37,15 @@ jobs:
     uses: ./.github/workflows/release-library.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   jpackage:
     needs: prepare
     uses: ./.github/workflows/release-jpackage.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   native:
     needs: prepare
     uses: ./.github/workflows/release-native.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
