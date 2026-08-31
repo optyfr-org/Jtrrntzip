@@ -5,8 +5,14 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.io.FilenameUtils;
@@ -18,7 +24,9 @@ import com.beust.jcommander.ParameterException;
  *
  * <p>The program walks the files, directories and glob patterns selected on
  * the command line, see {@link CliOptions}, and processes every zip archive
- * it finds. Progress and processing messages are written to standard
+ * it finds. When multiple files are discovered they are processed
+ * concurrently using Java virtual threads; a single file is processed
+ * sequentially. Progress and processing messages are written to standard
  * output; standard error receives the descriptions of I/O failures. The
  * process exits with one of:</p>
  * <ul>
@@ -38,6 +46,12 @@ public final class Program implements LogCallback {
     static final int EXIT_FAILED = 1;
     /** Exit code for usage errors, for example when no path is given. */
     static final int EXIT_USAGE = 2;
+
+    /**
+     * Shared lock used by {@link BufferedLogCallback} to flush output
+     * blocks atomically when processing files concurrently.
+     */
+    private final Object outputLock = new Object();
 
     /**
      * Program entry point.
@@ -63,8 +77,6 @@ public final class Program implements LogCallback {
     }
 
     private final CliOptions options;
-
-    private TorrentZip tz;
 
     /**
      * Creates the program for the given command line.
@@ -101,20 +113,22 @@ public final class Program implements LogCallback {
         if (infoHandled)
             return EXIT_OK;
 
-        var failures = 0;
-        if (!options.argfiles().isEmpty()) {
-            tz = new TorrentZip(this, new SimpleTorrentZipOptions(options.forceReZip(), options.checkOnly()));
-            for (final File argfile : options.argfiles()) {
-                // first check if arg is a directory
-                if (argfile.isDirectory()) {
-                    failures += processDir(argfile);
-                    continue;
-                }
-
-                // now check if arg is a directory/filename with possible wild cards.
-                failures += processLiteralFileOrGlob(argfile);
+        final List<File> files = new ArrayList<>();
+        var collectionErrors = false;
+        for (final File argfile : options.argfiles()) {
+            if (argfile.isDirectory()) {
+                collectionErrors |= collectFromDir(argfile, files);
+            } else {
+                collectionErrors |= collectFromGlob(argfile, files);
             }
         }
+
+        if (files.isEmpty())
+            return collectionErrors ? EXIT_FAILED : EXIT_OK;
+
+        final int failures = files.size() == 1
+                ? processSingle(files.getFirst())
+                : processConcurrent(files);
 
         if (options.guiLaunch()) {
             System.out.format(Messages.getString("Program.Complete")); // NOSONAR
@@ -123,68 +137,65 @@ public final class Program implements LogCallback {
             }
         }
 
-        return failures > 0 ? EXIT_FAILED : EXIT_OK;
+        final int totalFailures = failures + (collectionErrors ? 1 : 0);
+        return totalFailures > 0 ? EXIT_FAILED : EXIT_OK;
     }
 
     /**
-     * Returns the specification version of this package.
-     *
-     * @return the version taken from the jar manifest
-     */
-    private static String specificationVersion() {
-        return Program.class.getPackage().getSpecificationVersion();
-    }
-
-    /**
-     * Processes every zip archive in the directory, descending into
+     * Collects every zip archive in the directory, descending into
      * sub-directories unless recursion was disabled with {@code -s}.
      *
      * @param dir
      *            the directory to scan
-     * @return the number of archives that failed processing
+     * @param files
+     *            the accumulator for discovered zip files
+     * @return {@code true} when an error occurred (e.g.&nbsp;the directory
+     *         could not be listed)
      */
-    private int processDir(final File dir) {
+    private boolean collectFromDir(final File dir, final List<File> files) {
         if (isVerboseLogging())
             System.out.println(Messages.getString("Program.CheckingDir") + dir); // NOSONAR
 
-        final File[] files = dir.listFiles();
-        if (files == null) {
+        final File[] children = dir.listFiles();
+        if (children == null) {
             System.err.println(dir); // NOSONAR
-            return 1;
+            return true;
         }
 
-        var failures = 0;
-        for (final File f : files) {
+        var error = false;
+        for (final File f : children) {
             if (f.isDirectory()) {
                 if (!options.noRecursion())
-                    failures += processDir(f);
+                    error |= collectFromDir(f, files);
             } else {
                 final String ext = FilenameUtils.getExtension(f.getName());
-                if (ext != null && ext.equalsIgnoreCase("zip")) {
-                    failures += processSingle(f);
-                }
+                if (ext != null && ext.equalsIgnoreCase("zip"))
+                    files.add(f);
             }
         }
-        return failures;
+        return error;
     }
 
     /**
-     * Processes a single command line file argument.
+     * Collects zip files matching a literal file name or glob pattern.
      *
      * <p>An argument naming an existing file is processed literally, so names
      * containing glob metacharacters keep working. Otherwise the argument is
      * treated as a glob pattern relative to its parent directory and every
-     * matching zip is processed.</p>
+     * matching zip is collected.</p>
      *
      * @param argfile
-     *            the file or glob pattern to process
-     * @return the number of archives that failed processing
+     *            the file or glob pattern
+     * @param files
+     *            the accumulator for discovered zip files
+     * @return {@code true} when an error occurred (e.g.&nbsp;the parent
+     *         directory could not be opened)
      */
-    private int processLiteralFileOrGlob(final File argfile) {
-        // an argument matching an existing file is processed as-is, this keeps
-        // literal names that contain glob metacharacters working
-        if (argfile.isFile())
-            return processSingle(argfile);
+    private boolean collectFromGlob(final File argfile, final List<File> files) {
+        if (argfile.isFile()) {
+            files.add(argfile);
+            return false;
+        }
 
         String dir = argfile.getParent();
         if (dir == null)
@@ -193,17 +204,16 @@ public final class Program implements LogCallback {
         final String filename = argfile.getName();
 
         try (DirectoryStream<Path> dirStream = openDirectoryStream(Path.of(dir), filename)) {
-            var failures = 0;
             for (final Path path : dirStream) {
                 final String ext = FilenameUtils.getExtension(path.getFileName().toString());
                 if (ext == null || !ext.equalsIgnoreCase("zip"))
                     continue;
-                failures += processSingle(path.toFile());
+                files.add(path.toFile());
             }
-            return failures;
+            return false;
         } catch (final IOException e) {
             System.err.println(describe(e)); // NOSONAR
-            return 1;
+            return true;
         }
     }
 
@@ -253,13 +263,69 @@ public final class Program implements LogCallback {
     }
 
     /**
-     * Processes a single zip archive.
+     * Processes multiple zip archives concurrently using virtual threads.
+     *
+     * <p>Each file gets its own {@link TorrentZip} instance and its own
+     * {@link BufferedLogCallback} so that no mutable state is shared between
+     * threads. Output is flushed atomically per file under a shared lock.</p>
+     *
+     * @param files
+     *            the archives to process
+     * @return the number of archives that failed processing
+     */
+    private int processConcurrent(final List<File> files) {
+        final var failures = new AtomicInteger(0);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            final var futures = new ArrayList<Future<?>>();
+            for (final File file : files) {
+                futures.add(executor.submit(() -> processFileConcurrently(file, failures)));
+            }
+            awaitFutures(futures, failures);
+        }
+        return failures.get();
+    }
+
+    private void processFileConcurrently(final File file, final AtomicInteger failures) {
+        final var log = new BufferedLogCallback(this, outputLock);
+        final var engine = new TorrentZip(
+                log,
+                new SimpleTorrentZipOptions(options.forceReZip(), options.checkOnly())
+        );
+        try {
+            final Set<TrrntZipStatus> status = engine.process(file);
+            if (status.contains(TrrntZipStatus.CORRUPTZIP))
+                failures.incrementAndGet();
+        } catch (final IOException e) {
+            System.err.println(describe(e)); // NOSONAR
+            failures.incrementAndGet();
+        }
+        log.flushTo(System.out); // NOSONAR
+    }
+
+    private void awaitFutures(final List<Future<?>> futures, final AtomicInteger failures) {
+        for (final Future<?> f : futures) {
+            try {
+                f.get();
+            } catch (final ExecutionException e) {
+                System.err.println(e.getMessage() == null ? e.toString() : e.getMessage()); // NOSONAR
+                failures.incrementAndGet();
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println(e.getMessage() == null ? e.toString() : e.getMessage()); // NOSONAR
+                failures.incrementAndGet();
+            }
+        }
+    }
+
+    /**
+     * Processes a single zip archive sequentially.
      *
      * @param file
      *            the archive to check and repair
      * @return 1 when the archive is corrupt or failed processing, otherwise 0
      */
     private int processSingle(final File file) {
+        final var tz = new TorrentZip(this, new SimpleTorrentZipOptions(options.forceReZip(), options.checkOnly()));
         try {
             final Set<TrrntZipStatus> status = tz.process(file);
             return status.contains(TrrntZipStatus.CORRUPTZIP) ? 1 : 0;
@@ -279,6 +345,15 @@ public final class Program implements LogCallback {
      */
     private static String describe(final IOException e) {
         return e.getMessage() == null ? e.toString() : e.getMessage();
+    }
+
+    /**
+     * Returns the specification version of this package.
+     *
+     * @return the version taken from the jar manifest
+     */
+    private static String specificationVersion() {
+        return Program.class.getPackage().getSpecificationVersion();
     }
 
     /**
