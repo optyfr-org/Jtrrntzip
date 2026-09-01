@@ -109,3 +109,7 @@ The project builds with the bundled Gradle wrapper and a Java 25 toolchain:
 ## License
 
 [MIT](LICENSE), Copyright (C) 2018-2026 opty
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of releases.
