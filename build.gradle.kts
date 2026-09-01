@@ -3,10 +3,10 @@ plugins {
     application
     id("org.gradlex.extra-java-module-info")
     id("quality")
-    id("publishing")
+    id("publishing-config")
     id("native")
     id("eclipse-config")
-    id("distribution")
+    id("distribution-config")
 }
 
 java {
