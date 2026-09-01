@@ -34,18 +34,25 @@ jobs:
 
   library:
     needs: prepare
+    permissions:
+      contents: write
+      packages: write
     uses: ./.github/workflows/release-library.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
 
   jpackage:
     needs: prepare
+    permissions:
+      contents: write
     uses: ./.github/workflows/release-jpackage.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
 
   native:
     needs: prepare
+    permissions:
+      contents: write
     uses: ./.github/workflows/release-native.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
