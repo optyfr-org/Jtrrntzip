@@ -78,6 +78,36 @@ class ZipFileTest {
         }
     }
 
+    /** Zip64 plus a data descriptor may store zeros in the local size fields. */
+    @DisplayName("zip64 data descriptor with zero local sizes opens")
+    @Test
+    void zip64DataDescriptorWithZeroLocalSizesOpens() throws Exception {
+        final var zip = tempDir.resolve("zip64-dd-zero.zip");
+        TestZipFixtures.writeZip64DataDescriptorStored(zip, "a.txt", "hi".getBytes(StandardCharsets.US_ASCII), 0L);
+        assertOpensWithCount(zip, 1);
+    }
+
+    /** Zip64 plus a data descriptor may store the 0xffffffff sentinel in the local size fields. */
+    @DisplayName("zip64 data descriptor with sentinel local sizes opens")
+    @Test
+    void zip64DataDescriptorWithSentinelLocalSizesOpens() throws Exception {
+        final var zip = tempDir.resolve("zip64-dd-sentinel.zip");
+        TestZipFixtures.writeZip64DataDescriptorStored(zip, "a.txt", "hi".getBytes(StandardCharsets.US_ASCII), 0xffffffffL);
+        assertOpensWithCount(zip, 1);
+    }
+
+    /** A zip64 data descriptor local size that is neither zero nor the sentinel is rejected. */
+    @DisplayName("zip64 data descriptor with a bogus local size is rejected")
+    @Test
+    void zip64DataDescriptorWithBogusLocalSizeIsRejected() throws Exception {
+        final var zip = tempDir.resolve("zip64-dd-bogus.zip");
+        TestZipFixtures.writeZip64DataDescriptorStored(zip, "a.txt", "hi".getBytes(StandardCharsets.US_ASCII), 12345L);
+        try (var openZip = new ZipFile()) {
+            assertNotEquals(ZipReturn.ZIPGOOD, openZip.zipFileOpen(zip.toFile(), zip.toFile().lastModified(), true));
+            openZip.zipFileClose();
+        }
+    }
+
     /** A truncated archive does not open. */
     @DisplayName("a truncated zip is rejected")
     @Test

@@ -196,6 +196,71 @@ final class TestZipFixtures {
         return Arrays.copyOfRange(data, pos, pos + size);
     }
 
+    /** Writes a stored zip whose central directory is zip64 while the local sizes use a data descriptor. */
+    static void writeZip64DataDescriptorStored(final Path file, final String name, final byte[] content, final long localSizeField) throws IOException {
+        final var nameBytes = name.getBytes(StandardCharsets.US_ASCII);
+        final var crc = crcByte(content);
+        final long size = content.length;
+        final int localHeaderSize = 30 + nameBytes.length;
+        final int dataDescriptorSize = 16;
+        final int extraSize = 20;
+        final int cdSize = 46 + nameBytes.length + extraSize;
+        final int cdOffset = localHeaderSize + content.length + dataDescriptorSize;
+
+        final var buf = ByteBuffer.allocate(cdOffset + cdSize + 22).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(0x04034b50);
+        buf.putShort((short) 45);
+        buf.putShort((short) 8);
+        buf.putShort((short) 0);
+        buf.putShort((short) 0);
+        buf.putShort((short) 0);
+        buf.putInt(0);
+        buf.putInt((int) localSizeField);
+        buf.putInt((int) localSizeField);
+        buf.putShort((short) nameBytes.length);
+        buf.putShort((short) 0);
+        buf.put(nameBytes);
+        buf.put(content);
+        buf.putInt(0x08074b50);
+        buf.putInt((int) crc);
+        buf.putInt((int) size);
+        buf.putInt((int) size);
+
+        buf.putInt(0x02014b50);
+        buf.putShort((short) 45);
+        buf.putShort((short) 45);
+        buf.putShort((short) 8);
+        buf.putShort((short) 0);
+        buf.putShort((short) 0);
+        buf.putShort((short) 0);
+        buf.putInt((int) crc);
+        buf.putInt(0xffffffff);
+        buf.putInt(0xffffffff);
+        buf.putShort((short) nameBytes.length);
+        buf.putShort((short) extraSize);
+        buf.putShort((short) 0);
+        buf.putShort((short) 0);
+        buf.putShort((short) 0);
+        buf.putInt(0);
+        buf.putInt(0);
+        buf.put(nameBytes);
+        buf.putShort((short) 1);
+        buf.putShort((short) 16);
+        buf.putLong(size);
+        buf.putLong(size);
+
+        buf.putInt(0x06054b50);
+        buf.putShort((short) 0);
+        buf.putShort((short) 0);
+        buf.putShort((short) 1);
+        buf.putShort((short) 1);
+        buf.putInt(cdSize);
+        buf.putInt(cdOffset);
+        buf.putShort((short) 0);
+
+        java.nio.file.Files.write(file, buf.array());
+    }
+
     /** Writes the entries as a deflated zip with a zero timestamp through the JDK writer. */
     static void storeZip(final Path target, final Map<String, String> entries) throws IOException {
         try (var zos = new ZipOutputStream(new FileOutputStream(target.toFile()))) {

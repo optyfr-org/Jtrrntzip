@@ -657,7 +657,8 @@ public final class ZipFile implements ICompress
 
 		final var retVal = lf.localFileOpenWriteStream(raw, trrntzip, uncompressedSize, compressionMethod, deflater);
 
-		localFiles.add(lf);
+		if (retVal.status() == ZipReturn.ZIPGOOD)
+			localFiles.add(lf);
 
 		return retVal;
 	}

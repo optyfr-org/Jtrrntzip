@@ -601,13 +601,17 @@ public final class LocalFile implements Closeable {
 	 */
 	private ZipReturn checkLocalSize(long readValue, long centralValue, boolean isZip64, int generalPurposeBitFlag) {
 		boolean dataDescriptor = (generalPurposeBitFlag & 8) == 8;
-		if (isZip64 && readValue != 0xffffffffL && readValue != centralValue)
-				return ZipReturn.ZIPLOCALFILEHEADERERROR;
-		if (dataDescriptor && readValue != 0)
+		if (dataDescriptor) {
+			if (readValue == 0 || (isZip64 && readValue == 0xffffffffL))
+				return ZipReturn.ZIPGOOD;
 			return ZipReturn.ZIPLOCALFILEHEADERERROR;
-		if (!isZip64 && !dataDescriptor && readValue != centralValue)
+		}
+		if (isZip64) {
+			if (readValue == 0xffffffffL || readValue == centralValue)
+				return ZipReturn.ZIPGOOD;
 			return ZipReturn.ZIPLOCALFILEHEADERERROR;
-		return ZipReturn.ZIPGOOD;
+		}
+		return readValue == centralValue ? ZipReturn.ZIPGOOD : ZipReturn.ZIPLOCALFILEHEADERERROR;
 	}
 
 	/**
